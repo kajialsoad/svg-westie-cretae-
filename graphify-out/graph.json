@@ -1,0 +1,1418 @@
+{
+  "directed": false,
+  "multigraph": false,
+  "graph": {},
+  "nodes": [
+    {
+      "label": "server.js",
+      "file_type": "code",
+      "source_file": "server.js",
+      "source_location": "L1",
+      "id": "server_js",
+      "community": 6,
+      "norm_label": "server.js"
+    },
+    {
+      "label": "app.js",
+      "file_type": "code",
+      "source_file": "public/js/app.js",
+      "source_location": "L1",
+      "id": "public_js_app_js",
+      "community": 1,
+      "norm_label": "app.js"
+    },
+    {
+      "label": "navigateTo()",
+      "file_type": "code",
+      "source_file": "public/js/app.js",
+      "source_location": "L13",
+      "id": "js_app_navigateto",
+      "community": 1,
+      "norm_label": "navigateto()"
+    },
+    {
+      "label": "checkHealth()",
+      "file_type": "code",
+      "source_file": "public/js/app.js",
+      "source_location": "L27",
+      "id": "js_app_checkhealth",
+      "community": 1,
+      "norm_label": "checkhealth()"
+    },
+    {
+      "label": "handleDragOver()",
+      "file_type": "code",
+      "source_file": "public/js/app.js",
+      "source_location": "L45",
+      "id": "js_app_handledragover",
+      "community": 1,
+      "norm_label": "handledragover()"
+    },
+    {
+      "label": "handleDragLeave()",
+      "file_type": "code",
+      "source_file": "public/js/app.js",
+      "source_location": "L49",
+      "id": "js_app_handledragleave",
+      "community": 1,
+      "norm_label": "handledragleave()"
+    },
+    {
+      "label": "handleDrop()",
+      "file_type": "code",
+      "source_file": "public/js/app.js",
+      "source_location": "L52",
+      "id": "js_app_handledrop",
+      "community": 1,
+      "norm_label": "handledrop()"
+    },
+    {
+      "label": "handleFileSelect()",
+      "file_type": "code",
+      "source_file": "public/js/app.js",
+      "source_location": "L58",
+      "id": "js_app_handlefileselect",
+      "community": 1,
+      "norm_label": "handlefileselect()"
+    },
+    {
+      "label": "setFile()",
+      "file_type": "code",
+      "source_file": "public/js/app.js",
+      "source_location": "L63",
+      "id": "js_app_setfile",
+      "community": 1,
+      "norm_label": "setfile()"
+    },
+    {
+      "label": "startConversion()",
+      "file_type": "code",
+      "source_file": "public/js/app.js",
+      "source_location": "L107",
+      "id": "js_app_startconversion",
+      "community": 1,
+      "norm_label": "startconversion()"
+    },
+    {
+      "label": "showToast()",
+      "file_type": "code",
+      "source_file": "public/js/app.js",
+      "source_location": "L197",
+      "id": "js_app_showtoast",
+      "community": 1,
+      "norm_label": "showtoast()"
+    },
+    {
+      "label": "editor.js",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L1",
+      "id": "public_js_editor_js",
+      "community": 0,
+      "norm_label": "editor.js"
+    },
+    {
+      "label": "initEditor()",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L15",
+      "id": "js_editor_initeditor",
+      "community": 0,
+      "norm_label": "initeditor()"
+    },
+    {
+      "label": "updateLayerSelection()",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L38",
+      "id": "js_editor_updatelayerselection",
+      "community": 0,
+      "norm_label": "updatelayerselection()"
+    },
+    {
+      "label": "handleEditorDrop()",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L46",
+      "id": "js_editor_handleeditordrop",
+      "community": 0,
+      "norm_label": "handleeditordrop()"
+    },
+    {
+      "label": "handleEditorFileSelect()",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L53",
+      "id": "js_editor_handleeditorfileselect",
+      "community": 0,
+      "norm_label": "handleeditorfileselect()"
+    },
+    {
+      "label": "addImageToCanvas()",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L58",
+      "id": "js_editor_addimagetocanvas",
+      "community": 0,
+      "norm_label": "addimagetocanvas()"
+    },
+    {
+      "label": "renderLayersList()",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L97",
+      "id": "js_editor_renderlayerslist",
+      "community": 0,
+      "norm_label": "renderlayerslist()"
+    },
+    {
+      "label": "selectLayer()",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L109",
+      "id": "js_editor_selectlayer",
+      "community": 0,
+      "norm_label": "selectlayer()"
+    },
+    {
+      "label": "deleteLayer()",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L118",
+      "id": "js_editor_deletelayer",
+      "community": 0,
+      "norm_label": "deletelayer()"
+    },
+    {
+      "label": "applyEffect()",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L129",
+      "id": "js_editor_applyeffect",
+      "community": 1,
+      "norm_label": "applyeffect()"
+    },
+    {
+      "label": "editorPlay()",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L195",
+      "id": "js_editor_editorplay",
+      "community": 1,
+      "norm_label": "editorplay()"
+    },
+    {
+      "label": "editorPause()",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L234",
+      "id": "js_editor_editorpause",
+      "community": 0,
+      "norm_label": "editorpause()"
+    },
+    {
+      "label": "editorReset()",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L238",
+      "id": "js_editor_editorreset",
+      "community": 0,
+      "norm_label": "editorreset()"
+    },
+    {
+      "label": "resetAnimations()",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L247",
+      "id": "js_editor_resetanimations",
+      "community": 0,
+      "norm_label": "resetanimations()"
+    },
+    {
+      "label": "exportAnimation()",
+      "file_type": "code",
+      "source_file": "public/js/editor.js",
+      "source_location": "L256",
+      "id": "js_editor_exportanimation",
+      "community": 0,
+      "norm_label": "exportanimation()"
+    },
+    {
+      "label": "convert.js",
+      "file_type": "code",
+      "source_file": "routes/convert.js",
+      "source_location": "L1",
+      "id": "routes_convert_js",
+      "community": 7,
+      "norm_label": "convert.js"
+    },
+    {
+      "label": "compression.js",
+      "file_type": "code",
+      "source_file": "services/compression.js",
+      "source_location": "L1",
+      "id": "services_compression_js",
+      "community": 3,
+      "norm_label": "compression.js"
+    },
+    {
+      "label": "getTierSettings()",
+      "file_type": "code",
+      "source_file": "services/compression.js",
+      "source_location": "L41",
+      "id": "services_compression_gettiersettings",
+      "community": 3,
+      "norm_label": "gettiersettings()"
+    },
+    {
+      "label": "calculateBitrate()",
+      "file_type": "code",
+      "source_file": "services/compression.js",
+      "source_location": "L51",
+      "id": "services_compression_calculatebitrate",
+      "community": 3,
+      "norm_label": "calculatebitrate()"
+    },
+    {
+      "label": "calculateFPS()",
+      "file_type": "code",
+      "source_file": "services/compression.js",
+      "source_location": "L65",
+      "id": "services_compression_calculatefps",
+      "community": 3,
+      "norm_label": "calculatefps()"
+    },
+    {
+      "label": "calculateResolution()",
+      "file_type": "code",
+      "source_file": "services/compression.js",
+      "source_location": "L84",
+      "id": "services_compression_calculateresolution",
+      "community": 3,
+      "norm_label": "calculateresolution()"
+    },
+    {
+      "label": "checkSizeRequirement()",
+      "file_type": "code",
+      "source_file": "services/compression.js",
+      "source_location": "L113",
+      "id": "services_compression_checksizerequirement",
+      "community": 3,
+      "norm_label": "checksizerequirement()"
+    },
+    {
+      "label": "getCompressionParams()",
+      "file_type": "code",
+      "source_file": "services/compression.js",
+      "source_location": "L133",
+      "id": "services_compression_getcompressionparams",
+      "community": 3,
+      "norm_label": "getcompressionparams()"
+    },
+    {
+      "label": "ffmpeg.js",
+      "file_type": "code",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L1",
+      "id": "services_ffmpeg_js",
+      "community": 2,
+      "norm_label": "ffmpeg.js"
+    },
+    {
+      "label": "runFFmpeg()",
+      "file_type": "code",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L17",
+      "id": "services_ffmpeg_runffmpeg",
+      "community": 2,
+      "norm_label": "runffmpeg()"
+    },
+    {
+      "label": "checkFFmpeg()",
+      "file_type": "code",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L44",
+      "id": "services_ffmpeg_checkffmpeg",
+      "community": 2,
+      "norm_label": "checkffmpeg()"
+    },
+    {
+      "label": "extractFrames()",
+      "file_type": "code",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L60",
+      "id": "services_ffmpeg_extractframes",
+      "community": 2,
+      "norm_label": "extractframes()"
+    },
+    {
+      "label": "removeBackground()",
+      "file_type": "code",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L93",
+      "id": "services_ffmpeg_removebackground",
+      "community": 2,
+      "norm_label": "removebackground()"
+    },
+    {
+      "label": "removeBackgroundBatch()",
+      "file_type": "code",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L131",
+      "id": "services_ffmpeg_removebackgroundbatch",
+      "community": 2,
+      "norm_label": "removebackgroundbatch()"
+    },
+    {
+      "label": "framesToWebP()",
+      "file_type": "code",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L151",
+      "id": "services_ffmpeg_framestowebp",
+      "community": 2,
+      "norm_label": "framestowebp()"
+    },
+    {
+      "label": "framesToWebPSequence()",
+      "file_type": "code",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L182",
+      "id": "services_ffmpeg_framestowebpsequence",
+      "community": 2,
+      "norm_label": "framestowebpsequence()"
+    },
+    {
+      "label": "framesToGIF()",
+      "file_type": "code",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L213",
+      "id": "services_ffmpeg_framestogif",
+      "community": 2,
+      "norm_label": "framestogif()"
+    },
+    {
+      "label": "getVideoInfo()",
+      "file_type": "code",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L249",
+      "id": "services_ffmpeg_getvideoinfo",
+      "community": 2,
+      "norm_label": "getvideoinfo()"
+    },
+    {
+      "label": "createTempDir()",
+      "file_type": "code",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L292",
+      "id": "services_ffmpeg_createtempdir",
+      "community": 2,
+      "norm_label": "createtempdir()"
+    },
+    {
+      "label": "cleanupTempDir()",
+      "file_type": "code",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L302",
+      "id": "services_ffmpeg_cleanuptempdir",
+      "community": 2,
+      "norm_label": "cleanuptempdir()"
+    },
+    {
+      "label": "svga.js",
+      "file_type": "code",
+      "source_file": "services/svga.js",
+      "source_location": "L1",
+      "id": "services_svga_js",
+      "community": 5,
+      "norm_label": "svga.js"
+    },
+    {
+      "label": "loadProto()",
+      "file_type": "code",
+      "source_file": "services/svga.js",
+      "source_location": "L15",
+      "id": "services_svga_loadproto",
+      "community": 5,
+      "norm_label": "loadproto()"
+    },
+    {
+      "label": "parseSVGA()",
+      "file_type": "code",
+      "source_file": "services/svga.js",
+      "source_location": "L27",
+      "id": "services_svga_parsesvga",
+      "community": 5,
+      "norm_label": "parsesvga()"
+    },
+    {
+      "label": "extractImages()",
+      "file_type": "code",
+      "source_file": "services/svga.js",
+      "source_location": "L57",
+      "id": "services_svga_extractimages",
+      "community": 5,
+      "norm_label": "extractimages()"
+    },
+    {
+      "label": "getMetadata()",
+      "file_type": "code",
+      "source_file": "services/svga.js",
+      "source_location": "L77",
+      "id": "services_svga_getmetadata",
+      "community": 5,
+      "norm_label": "getmetadata()"
+    },
+    {
+      "label": "encodeSVGA()",
+      "file_type": "code",
+      "source_file": "services/svga.js",
+      "source_location": "L97",
+      "id": "services_svga_encodesvga",
+      "community": 5,
+      "norm_label": "encodesvga()"
+    },
+    {
+      "label": "AnimSuite Pro Platform",
+      "file_type": "document",
+      "source_file": "public/index.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "index_animsuite_pro",
+      "community": 4,
+      "norm_label": "animsuite pro platform"
+    },
+    {
+      "label": "SVGA to WebP Converter",
+      "file_type": "document",
+      "source_file": "public/index.html",
+      "source_location": "page-svga-webp",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "index_svga_webp_converter",
+      "community": 4,
+      "norm_label": "svga to webp converter"
+    },
+    {
+      "label": "Video to SVGA Converter",
+      "file_type": "document",
+      "source_file": "public/index.html",
+      "source_location": "page-video-svga",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "index_video_svga_converter",
+      "community": 4,
+      "norm_label": "video to svga converter"
+    },
+    {
+      "label": "PNG Animation Editor",
+      "file_type": "document",
+      "source_file": "public/index.html",
+      "source_location": "page-png-editor",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "index_png_animation_editor",
+      "community": 4,
+      "norm_label": "png animation editor"
+    },
+    {
+      "label": "Background Removal Feature",
+      "file_type": "rationale",
+      "source_file": "public/index.html",
+      "source_location": "video-svga section",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "index_background_removal",
+      "community": 4,
+      "norm_label": "background removal feature"
+    },
+    {
+      "label": "Output Size Control (5MB/10MB/15MB)",
+      "file_type": "rationale",
+      "source_file": "public/index.html",
+      "source_location": "size-selector",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "index_size_control",
+      "community": 4,
+      "norm_label": "output size control (5mb/10mb/15mb)"
+    },
+    {
+      "label": "Local Processing (No Cloud)",
+      "file_type": "rationale",
+      "source_file": "public/index.html",
+      "source_location": "features-bar",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "id": "index_local_processing",
+      "community": 4,
+      "norm_label": "local processing (no cloud)"
+    }
+  ],
+  "links": [
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/app.js",
+      "source_location": "L13",
+      "weight": 1.0,
+      "source": "public_js_app_js",
+      "target": "js_app_navigateto",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/app.js",
+      "source_location": "L27",
+      "weight": 1.0,
+      "source": "public_js_app_js",
+      "target": "js_app_checkhealth",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/app.js",
+      "source_location": "L45",
+      "weight": 1.0,
+      "source": "public_js_app_js",
+      "target": "js_app_handledragover",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/app.js",
+      "source_location": "L49",
+      "weight": 1.0,
+      "source": "public_js_app_js",
+      "target": "js_app_handledragleave",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/app.js",
+      "source_location": "L52",
+      "weight": 1.0,
+      "source": "public_js_app_js",
+      "target": "js_app_handledrop",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/app.js",
+      "source_location": "L58",
+      "weight": 1.0,
+      "source": "public_js_app_js",
+      "target": "js_app_handlefileselect",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/app.js",
+      "source_location": "L63",
+      "weight": 1.0,
+      "source": "public_js_app_js",
+      "target": "js_app_setfile",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/app.js",
+      "source_location": "L107",
+      "weight": 1.0,
+      "source": "public_js_app_js",
+      "target": "js_app_startconversion",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/app.js",
+      "source_location": "L197",
+      "weight": 1.0,
+      "source": "public_js_app_js",
+      "target": "js_app_showtoast",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/app.js",
+      "source_location": "L56",
+      "weight": 1.0,
+      "source": "js_app_handledrop",
+      "target": "js_app_setfile",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/app.js",
+      "source_location": "L60",
+      "weight": 1.0,
+      "source": "js_app_handlefileselect",
+      "target": "js_app_setfile",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/app.js",
+      "source_location": "L189",
+      "weight": 1.0,
+      "source": "js_app_startconversion",
+      "target": "js_app_showtoast",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "public/js/editor.js",
+      "source_location": "L131",
+      "weight": 1.0,
+      "source": "js_editor_applyeffect",
+      "target": "js_app_showtoast"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "public/js/editor.js",
+      "source_location": "L197",
+      "weight": 1.0,
+      "source": "js_editor_editorplay",
+      "target": "js_app_showtoast"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "public/js/editor.js",
+      "source_location": "L258",
+      "weight": 1.0,
+      "source": "js_editor_exportanimation",
+      "target": "js_app_showtoast"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L15",
+      "weight": 1.0,
+      "source": "public_js_editor_js",
+      "target": "js_editor_initeditor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L38",
+      "weight": 1.0,
+      "source": "public_js_editor_js",
+      "target": "js_editor_updatelayerselection",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L46",
+      "weight": 1.0,
+      "source": "public_js_editor_js",
+      "target": "js_editor_handleeditordrop",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L53",
+      "weight": 1.0,
+      "source": "public_js_editor_js",
+      "target": "js_editor_handleeditorfileselect",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L58",
+      "weight": 1.0,
+      "source": "public_js_editor_js",
+      "target": "js_editor_addimagetocanvas",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L97",
+      "weight": 1.0,
+      "source": "public_js_editor_js",
+      "target": "js_editor_renderlayerslist",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L109",
+      "weight": 1.0,
+      "source": "public_js_editor_js",
+      "target": "js_editor_selectlayer",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L118",
+      "weight": 1.0,
+      "source": "public_js_editor_js",
+      "target": "js_editor_deletelayer",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L129",
+      "weight": 1.0,
+      "source": "public_js_editor_js",
+      "target": "js_editor_applyeffect",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L195",
+      "weight": 1.0,
+      "source": "public_js_editor_js",
+      "target": "js_editor_editorplay",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L234",
+      "weight": 1.0,
+      "source": "public_js_editor_js",
+      "target": "js_editor_editorpause",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L238",
+      "weight": 1.0,
+      "source": "public_js_editor_js",
+      "target": "js_editor_editorreset",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L247",
+      "weight": 1.0,
+      "source": "public_js_editor_js",
+      "target": "js_editor_resetanimations",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L256",
+      "weight": 1.0,
+      "source": "public_js_editor_js",
+      "target": "js_editor_exportanimation",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L59",
+      "weight": 1.0,
+      "source": "js_editor_addimagetocanvas",
+      "target": "js_editor_initeditor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L50",
+      "weight": 1.0,
+      "source": "js_editor_handleeditordrop",
+      "target": "js_editor_addimagetocanvas",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L54",
+      "weight": 1.0,
+      "source": "js_editor_handleeditorfileselect",
+      "target": "js_editor_addimagetocanvas",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L114",
+      "weight": 1.0,
+      "source": "js_editor_selectlayer",
+      "target": "js_editor_renderlayerslist",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L124",
+      "weight": 1.0,
+      "source": "js_editor_deletelayer",
+      "target": "js_editor_renderlayerslist",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L240",
+      "weight": 1.0,
+      "source": "js_editor_editorreset",
+      "target": "js_editor_resetanimations",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "public/js/editor.js",
+      "source_location": "L291",
+      "weight": 1.0,
+      "source": "js_editor_exportanimation",
+      "target": "js_editor_resetanimations",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/compression.js",
+      "source_location": "L41",
+      "weight": 1.0,
+      "source": "services_compression_js",
+      "target": "services_compression_gettiersettings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/compression.js",
+      "source_location": "L51",
+      "weight": 1.0,
+      "source": "services_compression_js",
+      "target": "services_compression_calculatebitrate",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/compression.js",
+      "source_location": "L65",
+      "weight": 1.0,
+      "source": "services_compression_js",
+      "target": "services_compression_calculatefps",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/compression.js",
+      "source_location": "L84",
+      "weight": 1.0,
+      "source": "services_compression_js",
+      "target": "services_compression_calculateresolution",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/compression.js",
+      "source_location": "L113",
+      "weight": 1.0,
+      "source": "services_compression_js",
+      "target": "services_compression_checksizerequirement",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/compression.js",
+      "source_location": "L133",
+      "weight": 1.0,
+      "source": "services_compression_js",
+      "target": "services_compression_getcompressionparams",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/compression.js",
+      "source_location": "L66",
+      "weight": 1.0,
+      "source": "services_compression_calculatefps",
+      "target": "services_compression_gettiersettings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/compression.js",
+      "source_location": "L85",
+      "weight": 1.0,
+      "source": "services_compression_calculateresolution",
+      "target": "services_compression_gettiersettings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/compression.js",
+      "source_location": "L114",
+      "weight": 1.0,
+      "source": "services_compression_checksizerequirement",
+      "target": "services_compression_gettiersettings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/compression.js",
+      "source_location": "L134",
+      "weight": 1.0,
+      "source": "services_compression_getcompressionparams",
+      "target": "services_compression_gettiersettings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/compression.js",
+      "source_location": "L137",
+      "weight": 1.0,
+      "source": "services_compression_getcompressionparams",
+      "target": "services_compression_calculatebitrate",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/compression.js",
+      "source_location": "L135",
+      "weight": 1.0,
+      "source": "services_compression_getcompressionparams",
+      "target": "services_compression_calculatefps",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/compression.js",
+      "source_location": "L136",
+      "weight": 1.0,
+      "source": "services_compression_getcompressionparams",
+      "target": "services_compression_calculateresolution",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L17",
+      "weight": 1.0,
+      "source": "services_ffmpeg_js",
+      "target": "services_ffmpeg_runffmpeg",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L44",
+      "weight": 1.0,
+      "source": "services_ffmpeg_js",
+      "target": "services_ffmpeg_checkffmpeg",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L60",
+      "weight": 1.0,
+      "source": "services_ffmpeg_js",
+      "target": "services_ffmpeg_extractframes",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L93",
+      "weight": 1.0,
+      "source": "services_ffmpeg_js",
+      "target": "services_ffmpeg_removebackground",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L131",
+      "weight": 1.0,
+      "source": "services_ffmpeg_js",
+      "target": "services_ffmpeg_removebackgroundbatch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L151",
+      "weight": 1.0,
+      "source": "services_ffmpeg_js",
+      "target": "services_ffmpeg_framestowebp",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L182",
+      "weight": 1.0,
+      "source": "services_ffmpeg_js",
+      "target": "services_ffmpeg_framestowebpsequence",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L213",
+      "weight": 1.0,
+      "source": "services_ffmpeg_js",
+      "target": "services_ffmpeg_framestogif",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L249",
+      "weight": 1.0,
+      "source": "services_ffmpeg_js",
+      "target": "services_ffmpeg_getvideoinfo",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L292",
+      "weight": 1.0,
+      "source": "services_ffmpeg_js",
+      "target": "services_ffmpeg_createtempdir",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L302",
+      "weight": 1.0,
+      "source": "services_ffmpeg_js",
+      "target": "services_ffmpeg_cleanuptempdir",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L46",
+      "weight": 1.0,
+      "source": "services_ffmpeg_checkffmpeg",
+      "target": "services_ffmpeg_runffmpeg",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L76",
+      "weight": 1.0,
+      "source": "services_ffmpeg_extractframes",
+      "target": "services_ffmpeg_runffmpeg",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L121",
+      "weight": 1.0,
+      "source": "services_ffmpeg_removebackground",
+      "target": "services_ffmpeg_runffmpeg",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L172",
+      "weight": 1.0,
+      "source": "services_ffmpeg_framestowebp",
+      "target": "services_ffmpeg_runffmpeg",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L203",
+      "weight": 1.0,
+      "source": "services_ffmpeg_framestowebpsequence",
+      "target": "services_ffmpeg_runffmpeg",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L221",
+      "weight": 1.0,
+      "source": "services_ffmpeg_framestogif",
+      "target": "services_ffmpeg_runffmpeg",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/ffmpeg.js",
+      "source_location": "L138",
+      "weight": 1.0,
+      "source": "services_ffmpeg_removebackgroundbatch",
+      "target": "services_ffmpeg_removebackground",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/svga.js",
+      "source_location": "L15",
+      "weight": 1.0,
+      "source": "services_svga_js",
+      "target": "services_svga_loadproto",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/svga.js",
+      "source_location": "L27",
+      "weight": 1.0,
+      "source": "services_svga_js",
+      "target": "services_svga_parsesvga",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/svga.js",
+      "source_location": "L57",
+      "weight": 1.0,
+      "source": "services_svga_js",
+      "target": "services_svga_extractimages",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/svga.js",
+      "source_location": "L77",
+      "weight": 1.0,
+      "source": "services_svga_js",
+      "target": "services_svga_getmetadata",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "services/svga.js",
+      "source_location": "L97",
+      "weight": 1.0,
+      "source": "services_svga_js",
+      "target": "services_svga_encodesvga",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/svga.js",
+      "source_location": "L28",
+      "weight": 1.0,
+      "source": "services_svga_parsesvga",
+      "target": "services_svga_loadproto",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "services/svga.js",
+      "source_location": "L98",
+      "weight": 1.0,
+      "source": "services_svga_encodesvga",
+      "target": "services_svga_loadproto",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "public/index.html",
+      "source_location": "page-svga-webp",
+      "weight": 1.0,
+      "source": "index_animsuite_pro",
+      "target": "index_svga_webp_converter"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "public/index.html",
+      "source_location": "page-video-svga",
+      "weight": 1.0,
+      "source": "index_animsuite_pro",
+      "target": "index_video_svga_converter"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "public/index.html",
+      "source_location": "page-png-editor",
+      "weight": 1.0,
+      "source": "index_animsuite_pro",
+      "target": "index_png_animation_editor"
+    },
+    {
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "public/index.html",
+      "source_location": "features-bar",
+      "weight": 1.0,
+      "source": "index_animsuite_pro",
+      "target": "index_local_processing"
+    },
+    {
+      "relation": "uses",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "public/index.html",
+      "source_location": "size-selector",
+      "weight": 1.0,
+      "source": "index_svga_webp_converter",
+      "target": "index_size_control"
+    },
+    {
+      "relation": "uses",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "public/index.html",
+      "source_location": "bg-selector",
+      "weight": 1.0,
+      "source": "index_video_svga_converter",
+      "target": "index_background_removal"
+    },
+    {
+      "relation": "uses",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "public/index.html",
+      "source_location": "size-selector",
+      "weight": 1.0,
+      "source": "index_video_svga_converter",
+      "target": "index_size_control"
+    },
+    {
+      "relation": "uses",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "public/index.html",
+      "source_location": "size-selector",
+      "weight": 1.0,
+      "source": "index_png_animation_editor",
+      "target": "index_size_control"
+    }
+  ],
+  "hyperedges": []
+}

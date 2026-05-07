@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AnimSuite Pro — Media Conversion & Animation Platform</title>
+  <meta name="description"
+    content="Convert SVGA to WebP, Video to SVGA, and create PNG animations. Professional media conversion tool with background removal and size control.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+  <!-- ===== HEADER ===== -->
+  <header id="app-header">
+    <div class="header-inner">
+      <a href="#" class="logo" onclick="navigateTo('home'); return false;">
+        <div class="logo-icon">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <rect width="32" height="32" rx="8" fill="url(#logoGrad)" />
+            <path d="M8 22L16 10L24 22H8Z" fill="white" opacity="0.9" />
+            <circle cx="16" cy="12" r="3" fill="white" />
+            <defs>
+              <linearGradient id="logoGrad" x1="0" y1="0" x2="32" y2="32">
+                <stop stop-color="#6366f1" />
+                <stop offset="1" stop-color="#a855f7" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <span class="logo-text">Anim<strong>Suite</strong> Pro</span>
+      </a>
+      <nav class="header-nav">
+        <a href="#" onclick="navigateTo('home'); return false;" class="nav-link active" data-page="home">Home</a>
+        <a href="#" onclick="navigateTo('svga-webp'); return false;" class="nav-link"
+          data-page="svga-webp">SVGA Converter</a>
+        <a href="#" onclick="navigateTo('video-svga'); return false;" class="nav-link"
+          data-page="video-svga">Video→SVGA</a>
+        <a href="#" onclick="navigateTo('png-editor'); return false;" class="nav-link" data-page="png-editor">PNG
+          Editor</a>
+      </nav>
+      <div class="header-status" id="systemStatus">
+        <span class="status-dot"></span>
+        <span class="status-text">Checking...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== MAIN CONTENT ===== -->
+  <main id="app-main">
+
+    <!-- HOME PAGE -->
+    <section id="page-home" class="page active">
+      <div class="hero">
+        <div class="hero-glow"></div>
+        <h1 class="hero-title">
+          <span class="gradient-text">AnimSuite</span> Pro
+        </h1>
+        <p class="hero-subtitle">Professional Media Conversion & Animation Platform</p>
+        <p class="hero-desc">Convert SVGA animations, process videos, and create stunning PNG animations — all locally,
+          no cloud needed.</p>
+      </div>
+
+      <div class="modules-grid">
+        <!-- Card 1: SVGA → WebP -->
+        <div class="module-card" onclick="navigateTo('svga-webp')" id="card-svga-webp">
+          <div class="card-icon">
+            <svg viewBox="0 0 48 48" fill="none">
+              <rect x="4" y="4" width="40" height="40" rx="8" stroke="currentColor" stroke-width="2" />
+              <path d="M14 24L20 18L26 24L32 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round" />
+              <circle cx="24" cy="30" r="4" stroke="currentColor" stroke-width="2" />
+            </svg>
+          </div>
+          <h3 class="card-title">SVGA Converter</h3>
+          <p class="card-desc">Parse SVGA animations and convert to WebP, GIF or JSON format</p>
+          <div class="card-tags">
+            <span class="tag">.svga input</span>
+            <span class="tag">.webp/json output</span>
+          </div>
+          <div class="card-arrow">→</div>
+        </div>
+
+        <!-- Card 2: Video → SVGA -->
+        <div class="module-card" onclick="navigateTo('video-svga')" id="card-video-svga">
+          <div class="card-icon">
+            <svg viewBox="0 0 48 48" fill="none">
+              <rect x="4" y="8" width="40" height="32" rx="4" stroke="currentColor" stroke-width="2" />
+              <polygon points="20,16 32,24 20,32" fill="currentColor" opacity="0.7" />
+              <path d="M4 36L16 24L24 32L36 20L44 28" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                opacity="0.4" />
+            </svg>
+          </div>
+          <h3 class="card-title">Video → SVGA</h3>
+          <p class="card-desc">Extract frames, remove background, and build SVGA animation from video</p>
+          <div class="card-tags">
+            <span class="tag">MP4/MOV</span>
+            <span class="tag">BG Remove</span>
+            <span class="tag">.svga output</span>
+          </div>
+          <div class="card-arrow">→</div>
+        </div>
+
+        <!-- Card 3: PNG Animation -->
+        <div class="module-card" onclick="navigateTo('png-editor')" id="card-png-editor">
+          <div class="card-icon">
+            <svg viewBox="0 0 48 48" fill="none">
+              <rect x="8" y="8" width="32" height="32" rx="4" stroke="currentColor" stroke-width="2" />
+              <circle cx="18" cy="18" r="4" stroke="currentColor" stroke-width="2" />
+              <path d="M8 36L18 26L24 32L34 22L40 28V36C40 38.2 38.2 40 36 40H12C9.8 40 8 38.2 8 36Z"
+                fill="currentColor" opacity="0.3" />
+              <path d="M36 8L44 16V12C44 9.8 42.2 8 40 8H36Z" fill="currentColor" opacity="0.5" />
+            </svg>
+          </div>
+          <h3 class="card-title">PNG Animation</h3>
+          <p class="card-desc">Create stunning animations from PNG images with drag, resize, rotate & timeline</p>
+          <div class="card-tags">
+            <span class="tag">Canvas Editor</span>
+            <span class="tag">GIF/SVGA</span>
+          </div>
+          <div class="card-arrow">→</div>
+        </div>
+      </div>
+
+      <div class="features-bar">
+        <div class="feature-item">
+          <span class="feature-icon">⚡</span>
+          <span>Fast Processing</span>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">🎛️</span>
+          <span>Size Control</span>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">🔒</span>
+          <span>100% Local</span>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">🎨</span>
+          <span>BG Remove</span>
+        </div>
+      </div>
+
+      <!-- RECENT CONVERSIONS (File Manager) -->
+      <div class="recent-conversions" id="recent-conversions-section" style="display:none;">
+        <div class="section-header">
+          <h3 class="section-title">Recent Conversions</h3>
+          <button class="clear-history-btn" onclick="clearHistory()">Clear All</button>
+        </div>
+        <div class="history-list" id="history-list">
+          <!-- History items injected here -->
+        </div>
+      </div>
+    </section>
+
+    <!-- SVGA → WEBP PAGE -->
+    <section id="page-svga-webp" class="page">
+      <div class="page-header">
+        <div class="header-actions">
+          <button class="back-btn" onclick="navigateTo('home')">← Back</button>
+          <button class="new-file-btn" id="svga-new-btn" onclick="resetModule('svga-webp')" style="display:none;">+ New File</button>
+        </div>
+        <h2 class="page-title">SVGA <span class="gradient-text">Converter</span></h2>
+        <p class="page-desc">Upload an SVGA animation file and convert it to WebP, GIF or JSON metadata</p>
+      </div>
+
+      <div class="converter-layout">
+        <!-- Upload Zone -->
+        <div class="upload-zone" id="svga-upload-zone" ondragover="handleDragOver(event)"
+          ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'svga-webp')">
+          <div class="upload-content">
+            <div class="upload-icon">
+              <svg viewBox="0 0 64 64" fill="none">
+                <rect x="8" y="16" width="48" height="40" rx="8" stroke="currentColor" stroke-width="2"
+                  stroke-dasharray="4 4" />
+                <path d="M32 28V48" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                <path d="M24 36L32 28L40 36" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <p class="upload-text">Drag & drop your <strong>.svga</strong> file here</p>
+            <p class="upload-hint">or click to browse</p>
+            <input type="file" accept=".svga,.svg" class="file-input" id="svga-file-input"
+              onchange="handleFileSelect(event, 'svga-webp')">
+          </div>
+        </div>
+        
+        <!-- Upload Preview -->
+        <div id="svga-upload-preview" class="upload-preview-box" style="display:none;">
+          <h3 class="section-title">Source Preview</h3>
+          <div id="svga-player-canvas" class="player-canvas"></div>
+          <div class="file-details">
+            <span id="svga-file-name"></span>
+            <span id="svga-file-size"></span>
+          </div>
+        </div>
+
+        <!-- Format Selection -->
+        <div class="format-selector">
+          <h3 class="section-title">Output Format</h3>
+          <div class="format-options">
+            <label class="format-option selected" data-format="webp">
+              <input type="radio" name="svga-format" value="webp" checked>
+              <span>WebP</span>
+            </label>
+            <label class="format-option" data-format="gif">
+              <input type="radio" name="svga-format" value="gif">
+              <span>GIF</span>
+            </label>
+            <label class="format-option" data-format="json">
+              <input type="radio" name="svga-format" value="json">
+              <span>JSON</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Size Selection -->
+        <div class="size-selector">
+          <h3 class="section-title">Output Size</h3>
+          <div class="size-cards">
+            <label class="size-card" data-tier="lite">
+              <input type="radio" name="svga-size" value="lite">
+              <div class="size-card-inner">
+                <span class="size-emoji">🟢</span>
+                <strong>5 MB</strong>
+                <span class="size-label">Lite</span>
+              </div>
+            </label>
+            <label class="size-card selected" data-tier="standard">
+              <input type="radio" name="svga-size" value="standard" checked>
+              <div class="size-card-inner">
+                <span class="size-emoji">🟡</span>
+                <strong>10 MB</strong>
+                <span class="size-label">Standard</span>
+              </div>
+            </label>
+            <label class="size-card" data-tier="high">
+              <input type="radio" name="svga-size" value="high">
+              <div class="size-card-inner">
+                <span class="size-emoji">🔴</span>
+                <strong>15 MB</strong>
+                <span class="size-label">High Quality</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Convert Button (Auto-triggered) -->
+        <div id="svga-convert-status" class="auto-status" style="display:none;">
+          <span class="status-icon">🔄</span>
+          <span class="status-text">Processing...</span>
+        </div>
+      </div>
+
+      <!-- Progress / Result -->
+      <div class="result-area" id="svga-result" style="display:none;">
+        <div class="progress-section" id="svga-progress">
+          <div class="progress-bar-container">
+            <div class="progress-bar" id="svga-progress-bar"></div>
+          </div>
+          <p class="progress-step" id="svga-progress-step">Starting...</p>
+        </div>
+        <div class="result-section" id="svga-result-content" style="display:none;">
+          <div class="result-preview" id="svga-preview"></div>
+          <div class="json-viewer" id="svga-json-viewer" style="display:none;">
+            <pre><code id="svga-json-content"></code></pre>
+          </div>
+          <div class="result-info" id="svga-result-info"></div>
+          <button class="download-btn" id="svga-download-btn">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M10 3v10M6 9l4 4 4-4M3 15v2h14v-2" stroke="currentColor" stroke-width="1.5"
+                stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            Download File
+          </button>
+          <button class="secondary-btn" onclick="resetModule('svga-webp')">Convert Another</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIDEO → SVGA PAGE -->
+    <section id="page-video-svga" class="page">
+      <div class="page-header">
+        <div class="header-actions">
+          <button class="back-btn" onclick="navigateTo('home')">← Back</button>
+          <button class="new-file-btn" id="video-new-btn" onclick="resetModule('video-svga')" style="display:none;">+ New File</button>
+        </div>
+        <h2 class="page-title">Video <span class="gradient-text">→</span> SVGA</h2>
+        <p class="page-desc">Upload a video, remove background, and convert to SVGA animation</p>
+      </div>
+
+      <div class="converter-layout">
+        <!-- Upload Zone -->
+        <div class="upload-zone" id="video-upload-zone" ondragover="handleDragOver(event)"
+          ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, 'video-svga')">
+          <div class="upload-content">
+            <div class="upload-icon">
+              <svg viewBox="0 0 64 64" fill="none">
+                <rect x="8" y="16" width="48" height="40" rx="8" stroke="currentColor" stroke-width="2"
+                  stroke-dasharray="4 4" />
+                <polygon points="28,24 40,32 28,40" fill="currentColor" opacity="0.5" />
+              </svg>
+            </div>
+            <p class="upload-text">Drag & drop your <strong>video</strong> here</p>
+            <p class="upload-hint">MP4, MOV • Max 10 seconds • Max 50MB</p>
+            <input type="file" accept="video/mp4,video/quicktime,video/x-msvideo,.mp4,.mov,.avi" class="file-input"
+              id="video-file-input" onchange="handleFileSelect(event, 'video-svga')">
+          </div>
+        </div>
+
+        <!-- Background Selection -->
+        <div class="bg-selector">
+          <h3 class="section-title">Background Color to Remove</h3>
+          <div class="bg-options">
+            <label class="bg-option selected" data-color="white">
+              <input type="radio" name="video-bg" value="white" checked>
+              <div class="bg-swatch" style="background: white; border: 2px solid #333;"></div>
+              <span>White</span>
+            </label>
+            <label class="bg-option" data-color="green">
+              <input type="radio" name="video-bg" value="green">
+              <div class="bg-swatch" style="background: #00FF00;"></div>
+              <span>Green</span>
+            </label>
+            <label class="bg-option" data-color="black">
+              <input type="radio" name="video-bg" value="black">
+              <div class="bg-swatch" style="background: black; border: 2px solid #333;"></div>
+              <span>Black</span>
+            </label>
+          </div>
+          <div class="tolerance-control">
+            <label>Tolerance: <span id="tolerance-value">0.3</span></label>
+            <input type="range" min="0.05" max="0.8" step="0.05" value="0.3" id="tolerance-slider"
+              oninput="document.getElementById('tolerance-value').textContent = this.value">
+          </div>
+        </div>
+
+        <!-- Size Selection -->
+        <div class="size-selector">
+          <h3 class="section-title">Output Size</h3>
+          <div class="size-cards">
+            <label class="size-card" data-tier="lite">
+              <input type="radio" name="video-size" value="lite">
+              <div class="size-card-inner">
+                <span class="size-emoji">🟢</span>
+                <strong>5 MB</strong>
+                <span class="size-label">Lite</span>
+              </div>
+            </label>
+            <label class="size-card selected" data-tier="standard">
+              <input type="radio" name="video-size" value="standard" checked>
+              <div class="size-card-inner">
+                <span class="size-emoji">🟡</span>
+                <strong>10 MB</strong>
+                <span class="size-label">Standard</span>
+              </div>
+            </label>
+            <label class="size-card" data-tier="high">
+              <input type="radio" name="video-size" value="high">
+              <div class="size-card-inner">
+                <span class="size-emoji">🔴</span>
+                <strong>15 MB</strong>
+                <span class="size-label">High Quality</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Convert Button (Auto-triggered) -->
+        <div id="video-convert-status" class="auto-status" style="display:none;">
+          <span class="status-icon">🔄</span>
+          <span class="status-text">Processing...</span>
+        </div>
+      </div>
+
+      <!-- Progress / Result -->
+      <div class="result-area" id="video-result" style="display:none;">
+        <div class="progress-section" id="video-progress">
+          <div class="progress-bar-container">
+            <div class="progress-bar" id="video-progress-bar"></div>
+          </div>
+          <p class="progress-step" id="video-progress-step">Starting...</p>
+        </div>
+        <div class="result-section" id="video-result-content" style="display:none;">
+          <div class="result-info" id="video-result-info"></div>
+          <button class="download-btn" id="video-download-btn">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M10 3v10M6 9l4 4 4-4M3 15v2h14v-2" stroke="currentColor" stroke-width="1.5"
+                stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            Download SVGA
+          </button>
+          <button class="secondary-btn" onclick="resetModule('video-svga')">Convert Another</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- PNG EDITOR PAGE -->
+    <section id="page-png-editor" class="page">
+      <div class="page-header">
+        <button class="back-btn" onclick="navigateTo('home')">← Back</button>
+        <h2 class="page-title">PNG <span class="gradient-text">Animation</span> Editor</h2>
+        <p class="page-desc">Upload PNG images, create animations with drag, resize, rotate & timeline</p>
+      </div>
+
+      <div class="editor-layout">
+        <!-- Left: Toolbar -->
+        <div class="editor-toolbar">
+          <h3>Layers</h3>
+          <div class="upload-mini-zone" id="png-upload-zone" ondragover="handleDragOver(event)"
+            ondragleave="handleDragLeave(event)" ondrop="handleEditorDrop(event)">
+            <p>+ Add Image</p>
+            <input type="file" accept="image/png,image/gif,image/jpeg,image/webp" class="file-input" id="png-file-input"
+              onchange="handleEditorFileSelect(event)" multiple>
+          </div>
+          <div class="layers-list" id="layers-list"></div>
+
+          <h3>Animation Effects</h3>
+          <div class="effects-list">
+            <button class="effect-btn" onclick="applyEffect('fadeIn')">Fade In</button>
+            <button class="effect-btn" onclick="applyEffect('fadeOut')">Fade Out</button>
+            <button class="effect-btn" onclick="applyEffect('bounce')">Bounce</button>
+            <button class="effect-btn" onclick="applyEffect('rotate360')">Rotate 360°</button>
+            <button class="effect-btn" onclick="applyEffect('scaleUp')">Scale Up</button>
+            <button class="effect-btn" onclick="applyEffect('scaleDown')">Scale Down</button>
+            <button class="effect-btn" onclick="applyEffect('slideLeft')">Slide Left</button>
+            <button class="effect-btn" onclick="applyEffect('slideRight')">Slide Right</button>
+          </div>
+
+          <h3>Settings</h3>
+          <div class="editor-settings">
+            <label>FPS: <input type="number" id="editor-fps" value="15" min="5" max="30"></label>
+            <label>Duration: <input type="number" id="editor-duration" value="2" min="0.5" max="10" step="0.5">
+              sec</label>
+            <label>Canvas Size:
+              <select id="editor-canvas-size">
+                <option value="300">300×300</option>
+                <option value="480">480×480</option>
+                <option value="720" selected>720×720</option>
+                <option value="960">960×960</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <!-- Center: Canvas -->
+        <div class="editor-canvas-wrapper">
+          <div class="canvas-container" id="canvas-container">
+            <canvas id="editor-canvas" width="720" height="720"></canvas>
+          </div>
+          <div class="canvas-controls">
+            <button class="ctrl-btn" onclick="editorPlay()" id="btn-play">▶ Play</button>
+            <button class="ctrl-btn" onclick="editorPause()" id="btn-pause">⏸ Pause</button>
+            <button class="ctrl-btn" onclick="editorReset()">⟲ Reset</button>
+          </div>
+          <div class="timeline-bar" id="timeline-bar">
+            <div class="timeline-track">
+              <div class="timeline-cursor" id="timeline-cursor"></div>
+            </div>
+            <span class="timeline-time" id="timeline-time">0.00s</span>
+          </div>
+        </div>
+
+        <!-- Right: Export -->
+        <div class="editor-export">
+          <h3>Export</h3>
+          <div class="export-format">
+            <label class="format-option selected">
+              <input type="radio" name="export-format" value="gif" checked>
+              <span>GIF</span>
+            </label>
+            <label class="format-option">
+              <input type="radio" name="export-format" value="svga">
+              <span>SVGA</span>
+            </label>
+          </div>
+
+          <div class="size-cards compact">
+            <label class="size-card" data-tier="lite">
+              <input type="radio" name="editor-size" value="lite">
+              <div class="size-card-inner">
+                <span class="size-emoji">🟢</span>
+                <strong>5MB</strong>
+              </div>
+            </label>
+            <label class="size-card selected" data-tier="standard">
+              <input type="radio" name="editor-size" value="standard" checked>
+              <div class="size-card-inner">
+                <span class="size-emoji">🟡</span>
+                <strong>10MB</strong>
+              </div>
+            </label>
+            <label class="size-card" data-tier="high">
+              <input type="radio" name="editor-size" value="high">
+              <div class="size-card-inner">
+                <span class="size-emoji">🔴</span>
+                <strong>15MB</strong>
+              </div>
+            </label>
+          </div>
+
+          <button class="convert-btn export-btn" onclick="exportAnimation()" id="export-btn">
+            <span class="btn-text">Export Animation</span>
+            <span class="btn-loader"></span>
+          </button>
+
+          <div class="export-result" id="export-result" style="display:none;">
+            <div class="result-info" id="export-result-info"></div>
+            <button class="download-btn" id="export-download-btn">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <path d="M10 3v10M6 9l4 4 4-4M3 15v2h14v-2" stroke="currentColor" stroke-width="1.5"
+                  stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              Download
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===== TOAST NOTIFICATIONS ===== -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- ===== SCRIPTS ===== -->
+  <script src="https://cdn.jsdelivr.net/npm/svgaplayerweb@2.3.1/build/svga.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/editor.js"></script>
+</body>
+
+</html>

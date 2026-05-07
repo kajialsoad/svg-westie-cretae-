@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebP Animation Test</title>
+    <style>
+        body {
+            background: #0d1117;
+            color: white;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        h1 {
+            margin-bottom: 20px;
+        }
+        .test-container {
+            background: #1a2030;
+            padding: 30px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        img {
+            max-width: 400px;
+            border: 2px solid #6366f1;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .info {
+            font-size: 14px;
+            color: #8b949e;
+            margin-top: 10px;
+        }
+        .upload-btn {
+            background: #6366f1;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        .upload-btn:hover {
+            background: #818cf8;
+        }
+        input[type="file"] {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎬 WebP Animation Test</h1>
+    <div class="test-container">
+        <p>Upload a WebP file to test if animation works in your browser</p>
+        <label for="webp-upload" class="upload-btn">Choose WebP File</label>
+        <input type="file" id="webp-upload" accept=".webp,image/webp">
+        <div id="preview-area"></div>
+        <div class="info" id="info-text">No file selected</div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('webp-upload');
+        const previewArea = document.getElementById('preview-area');
+        const infoText = document.getElementById('info-text');
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onload = () => {
+                    previewArea.innerHTML = '';
+                    previewArea.appendChild(img);
+                    infoText.innerHTML = `
+                        File: ${file.name}<br>
+                        Size: ${(file.size / 1024).toFixed(2)} KB<br>
+                        Type: ${file.type}<br>
+                        <strong>If you see animation, WebP is working!</strong>
+                    `;
+                };
+            };
+            reader.readAsDataURL(file);
+        });
+    </script>
+</body>
+</html>
