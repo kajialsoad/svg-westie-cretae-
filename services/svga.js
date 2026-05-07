@@ -71,9 +71,35 @@ function extractImages(movieData) {
 
 /**
  * Extract actual animation frames from SVGA sprites
- * This generates one image per frame based on sprite animations
+ * Returns movie data and images for canvas rendering
  * @param {Object} movieData - Parsed movie data
- * @returns {Array} - Array of frame buffers (one per animation frame)
+ * @returns {Object} - { movieData, images } for rendering
+ */
+function extractFramesForRendering(movieData) {
+  const params = movieData.params || {};
+  const totalFrames = params.frames || 1;
+  const sprites = movieData.sprites || [];
+  const images = movieData.images || {};
+
+  console.log('extractFramesForRendering called:', {
+    totalFrames,
+    spriteCount: sprites.length,
+    imageCount: Object.keys(images).length
+  });
+
+  // Return full data for canvas rendering
+  return {
+    movieData: movieData,
+    images: images,
+  };
+}
+
+/**
+ * Extract actual animation frames from SVGA sprites
+ * SIMPLIFIED APPROACH: Extract all unique images in sequence
+ * This won't preserve exact animation timing but will show all elements
+ * @param {Object} movieData - Parsed movie data
+ * @returns {Array} - Array of frame buffers
  */
 function extractFrames(movieData) {
   const params = movieData.params || {};
@@ -81,48 +107,49 @@ function extractFrames(movieData) {
   const sprites = movieData.sprites || [];
   const images = movieData.images || {};
 
-  // If there are sprites with frame data, we need to render each frame
-  // For now, we'll return the base images repeated for each frame
-  // This is a simplified approach - full sprite rendering would require canvas
-  const frames = [];
-  
-  // Get all unique images
+  console.log('extractFrames called:', {
+    totalFrames,
+    spriteCount: sprites.length,
+    imageCount: Object.keys(images).length
+  });
+
+  // Get all unique images as buffers
   const imageBuffers = Object.values(images).filter(buf => buf && buf.length > 0);
   
   if (imageBuffers.length === 0) {
+    console.warn('No images found in SVGA file');
     return [];
   }
 
-  // If we have sprites, try to extract frame-specific images
-  if (sprites.length > 0) {
-    // For each frame, collect visible sprites
-    for (let frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
-      // Find sprites visible in this frame
-      for (const sprite of sprites) {
-        if (sprite.imageKey && images[sprite.imageKey]) {
-          const spriteFrames = sprite.frames || [];
-          if (spriteFrames[frameIdx] && spriteFrames[frameIdx].alpha > 0) {
-            frames.push({
-              imageKey: sprite.imageKey,
-              imageBuffer: Buffer.from(images[sprite.imageKey]),
-              frameIndex: frameIdx,
-            });
-            break; // One image per frame for now
-          }
-        }
-      }
+  const frames = [];
+
+  // SIMPLE APPROACH: Return all unique images as sequential frames
+  // This will show all elements but may not preserve exact animation
+  console.log('Extracting all unique images as frames');
+  Object.entries(images).forEach(([key, buffer], idx) => {
+    if (buffer && buffer.length > 0) {
+      frames.push({
+        imageKey: key,
+        imageBuffer: Buffer.from(buffer),
+        frameIndex: idx,
+      });
+    }
+  });
+
+  // If we have sprite frame data, try to repeat frames to match animation length
+  if (frames.length > 0 && totalFrames > frames.length) {
+    console.log(`Repeating ${frames.length} images to create ${totalFrames} frames`);
+    const originalFrames = [...frames];
+    while (frames.length < totalFrames) {
+      const idx = frames.length % originalFrames.length;
+      frames.push({
+        ...originalFrames[idx],
+        frameIndex: frames.length,
+      });
     }
   }
 
-  // Fallback: if no frames extracted, return all images
-  if (frames.length === 0) {
-    return imageBuffers.map((buf, idx) => ({
-      imageKey: `frame_${idx}`,
-      imageBuffer: Buffer.from(buf),
-      frameIndex: idx,
-    }));
-  }
-
+  console.log(`Extracted ${frames.length} frames from SVGA`);
   return frames;
 }
 
@@ -231,6 +258,7 @@ module.exports = {
   parseSVGA,
   extractImages,
   extractFrames,
+  extractFramesForRendering,
   getMetadata,
   encodeSVGA,
   loadProto,

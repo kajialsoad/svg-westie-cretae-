@@ -686,6 +686,19 @@ body {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  position: relative;
+}
+
+.player-canvas canvas {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.player-canvas img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
 }
 
 .file-details {
@@ -740,6 +753,13 @@ body {
 .result-preview {
   margin-bottom: 16px;
   text-align: center;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  padding: 1rem;
 }
 
 .result-preview img {

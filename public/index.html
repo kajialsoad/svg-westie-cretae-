@@ -249,10 +249,12 @@
           </div>
         </div>
 
-        <!-- Convert Button (Auto-triggered) -->
-        <div id="svga-convert-status" class="auto-status" style="display:none;">
-          <span class="status-icon">🔄</span>
-          <span class="status-text">Processing...</span>
+        <!-- Convert Button -->
+        <div class="convert-button-wrapper" id="svga-convert-wrapper" style="display:none;">
+          <button class="convert-btn" id="svga-convert-btn-main" onclick="startConversion('svga-webp')">
+            <span class="btn-icon">⚡</span>
+            <span class="btn-text">Convert Now</span>
+          </button>
         </div>
       </div>
 

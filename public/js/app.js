@@ -68,11 +68,10 @@ function setFile(module, file) {
   state.files[module] = file;
   const prefix = module === 'svga-webp' ? 'svga' : 'video';
   const zoneId = module === 'svga-webp' ? 'svga-upload-zone' : 'video-upload-zone';
-  const btnId = module === 'svga-webp' ? 'svga-convert-btn' : 'video-convert-btn';
   const newBtnId = module === 'svga-webp' ? 'svga-new-btn' : 'video-new-btn';
+  const convertWrapperId = module === 'svga-webp' ? 'svga-convert-wrapper' : null;
   
   const zone = document.getElementById(zoneId);
-  const btn = document.getElementById(btnId);
   const newBtn = document.getElementById(newBtnId);
 
   zone.classList.add('has-file');
@@ -85,14 +84,20 @@ function setFile(module, file) {
     <p class="upload-hint">${(file.size / (1024 * 1024)).toFixed(2)} MB</p>
     <button class="remove-file-btn" onclick="event.stopPropagation(); resetModule('${module}')">Remove</button>
   `;
-  btn.disabled = false;
+  
   if (newBtn) newBtn.style.display = 'block';
   
-  // Auto-trigger preview & conversion
+  // Show preview for SVGA
   if (module === 'svga-webp') {
     showSVGAPreview(file);
+    // Show convert button
+    if (convertWrapperId) {
+      document.getElementById(convertWrapperId).style.display = 'block';
+    }
+  } else {
+    // Auto-trigger for video
+    startConversion(module);
   }
-  startConversion(module);
 }
 
 let svgaPlayer = null;
@@ -102,34 +107,93 @@ function showSVGAPreview(file) {
   const previewBox = document.getElementById('svga-upload-preview');
   const fileNameEl = document.getElementById('svga-file-name');
   const fileSizeEl = document.getElementById('svga-file-size');
+  const playerCanvas = document.getElementById('svga-player-canvas');
+  
+  console.log('showSVGAPreview called with file:', file.name, file.type);
   
   previewBox.style.display = 'block';
   fileNameEl.textContent = file.name;
   fileSizeEl.textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
 
   const url = URL.createObjectURL(file);
+  console.log('Created blob URL:', url);
   
   if (file.name.toLowerCase().endsWith('.svg') || file.type === 'image/svg+xml') {
-    const playerCanvas = document.getElementById('svga-player-canvas');
+    console.log('Treating as SVG image');
     playerCanvas.innerHTML = `<img src="${url}" style="max-height:100%; max-width:100%;">`;
     // We don't revoke immediately because the img needs it
   } else {
-    // Treat as SVGA
-    if (!svgaPlayer) {
-      svgaPlayer = new SVGA.Player('#svga-player-canvas');
-      svgaParser = new SVGA.Parser();
+    console.log('Treating as SVGA animation');
+    // Treat as SVGA - reinitialize player each time for clean state
+    playerCanvas.innerHTML = '<div style="color: #888; text-align: center; padding: 2rem;">Loading preview...</div>';
+    
+    // Stop existing player if any
+    if (svgaPlayer) {
+      try {
+        svgaPlayer.stopAnimation();
+        svgaPlayer.clear();
+      } catch (e) {
+        console.log('Player cleanup:', e);
+      }
     }
     
-    // Clear canvas first
-    document.getElementById('svga-player-canvas').innerHTML = '';
+    // Create fresh player and parser (parser doesn't take selector)
+    console.log('Creating new SVGA Player and Parser');
+    svgaPlayer = new SVGA.Player('#svga-player-canvas');
+    svgaParser = new SVGA.Parser();
 
+    console.log('Loading SVGA from URL...');
+    
+    // Set a timeout for loading
+    const loadTimeout = setTimeout(() => {
+      console.warn('SVGA loading timeout - showing placeholder');
+      playerCanvas.innerHTML = `
+        <div style="color: #888; text-align: center; padding: 2rem;">
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none" style="opacity: 0.5; margin-bottom: 1rem;">
+            <rect x="8" y="16" width="48" height="40" rx="8" stroke="currentColor" stroke-width="2" />
+            <circle cx="32" cy="32" r="8" stroke="currentColor" stroke-width="2" />
+          </svg>
+          <p>Preview not available</p>
+          <p style="font-size: 0.875rem; opacity: 0.7;">File will be converted normally</p>
+        </div>
+      `;
+    }, 5000); // 5 second timeout
+    
     svgaParser.load(url, (videoItem) => {
-      svgaPlayer.setVideoItem(videoItem);
-      svgaPlayer.startAnimation();
+      clearTimeout(loadTimeout);
+      console.log('SVGA loaded successfully:', videoItem);
+      try {
+        svgaPlayer.setVideoItem(videoItem);
+        svgaPlayer.startAnimation();
+        console.log('SVGA animation started');
+      } catch (e) {
+        console.error('Failed to start animation:', e);
+        playerCanvas.innerHTML = `
+          <div style="color: #888; text-align: center; padding: 2rem;">
+            <p>✓ File loaded</p>
+            <p style="font-size: 0.875rem; opacity: 0.7;">Animation preview unavailable</p>
+          </div>
+        `;
+      }
       URL.revokeObjectURL(url);
     }, (err) => {
+      clearTimeout(loadTimeout);
       console.error('SVGA Preview Error:', err);
-      showToast('Failed to preview SVGA file', 'error');
+      
+      // Show a friendly message instead of error
+      playerCanvas.innerHTML = `
+        <div style="color: #888; text-align: center; padding: 2rem;">
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none" style="opacity: 0.5; margin-bottom: 1rem;">
+            <rect x="8" y="16" width="48" height="40" rx="8" stroke="currentColor" stroke-width="2" />
+            <path d="M24 28L32 36L40 28" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+          <p>Preview not available</p>
+          <p style="font-size: 0.875rem; opacity: 0.7;">File will be converted normally</p>
+        </div>
+      `;
+      
+      showToast('Preview unavailable, but conversion will work', 'info');
+      URL.revokeObjectURL(url);
     });
   }
 }
@@ -143,9 +207,9 @@ function resetModule(module) {
   const resultId = module === 'svga-webp' ? 'svga-result' : 'video-result';
 
   const zone = document.getElementById(zoneId);
-  const btn = document.getElementById(btnId);
   const newBtn = document.getElementById(newBtnId);
   const result = document.getElementById(resultId);
+  const convertWrapper = document.getElementById('svga-convert-wrapper');
 
   zone.classList.remove('has-file');
   const content = zone.querySelector('.upload-content');
@@ -177,9 +241,9 @@ function resetModule(module) {
     `;
   }
 
-  btn.disabled = true;
   if (newBtn) newBtn.style.display = 'none';
   result.style.display = 'none';
+  if (convertWrapper) convertWrapper.style.display = 'none';
   
   if (module === 'svga-webp') {
     const previewBox = document.getElementById('svga-upload-preview');
@@ -200,9 +264,11 @@ document.addEventListener('click', (e) => {
     const radio = card.querySelector('input[type="radio"]');
     if (radio) {
       radio.checked = true;
-      // Auto-trigger if we have a file
+      // Don't auto-trigger for SVGA, only for video
       const module = state.currentPage === 'svga-webp' ? 'svga-webp' : 'video-svga';
-      if (state.files[module]) startConversion(module);
+      if (state.files[module] && module === 'video-svga') {
+        startConversion(module);
+      }
     }
   }
   const bgOpt = e.target.closest('.bg-option');
@@ -224,7 +290,7 @@ document.addEventListener('click', (e) => {
       const radio = fmtOpt.querySelector('input[type="radio"]');
       if (radio) {
         radio.checked = true;
-        if (state.files['svga-webp']) startConversion('svga-webp');
+        // Don't auto-trigger, user will click Convert button
       }
     } else {
       // PNG Editor format options
@@ -235,138 +301,176 @@ document.addEventListener('click', (e) => {
 });
 
 // ===== CONVERSION =====
-let conversionTimeout = null;
-
 async function startConversion(module) {
-  // Debounce to prevent multiple rapid triggers
-  if (conversionTimeout) clearTimeout(conversionTimeout);
-  
-  conversionTimeout = setTimeout(async () => {
-    const file = state.files[module];
-    if (!file) return;
+  const file = state.files[module];
+  if (!file) return;
 
-    const prefix = module === 'svga-webp' ? 'svga' : 'video';
-    const statusEl = document.getElementById(`${prefix}-convert-status`);
-    const resultArea = document.getElementById(`${prefix}-result`);
-    const progressBar = document.getElementById(`${prefix}-progress-bar`);
-    const progressStep = document.getElementById(`${prefix}-progress-step`);
-    const resultContent = document.getElementById(`${prefix}-result-content`);
-    const progressSection = document.getElementById(`${prefix}-progress`);
+  const prefix = module === 'svga-webp' ? 'svga' : 'video';
+  const statusEl = document.getElementById(`${prefix}-convert-status`);
+  const resultArea = document.getElementById(`${prefix}-result`);
+  const progressBar = document.getElementById(`${prefix}-progress-bar`);
+  const progressStep = document.getElementById(`${prefix}-progress-step`);
+  const resultContent = document.getElementById(`${prefix}-result-content`);
+  const progressSection = document.getElementById(`${prefix}-progress`);
 
-    // Get selected size tier
-    const sizeRadio = document.querySelector(`input[name="${prefix}-size"]:checked`);
-    const sizeTier = sizeRadio ? sizeRadio.value : 'standard';
+  // Get selected size tier
+  const sizeRadio = document.querySelector(`input[name="${prefix}-size"]:checked`);
+  const sizeTier = sizeRadio ? sizeRadio.value : 'standard';
 
-    // UI: Loading state
-    if (statusEl) statusEl.style.display = 'flex';
-    resultArea.style.display = 'block';
-    resultContent.style.display = 'none';
-    progressSection.style.display = 'block';
-    progressBar.style.width = '10%';
-    progressBar.style.background = 'linear-gradient(90deg, var(--accent), var(--purple))';
-    progressStep.textContent = 'Starting...';
+  // UI: Loading state
+  if (statusEl) statusEl.style.display = 'flex';
+  resultArea.style.display = 'block';
+  resultContent.style.display = 'none';
+  progressSection.style.display = 'block';
+  progressBar.style.width = '10%';
+  progressBar.style.background = 'linear-gradient(90deg, var(--accent), var(--purple))';
+  progressStep.textContent = 'Starting...';
 
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('sizeTier', sizeTier);
+  try {
+    console.log('Starting conversion:', { module, file: file.name, sizeTier });
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('sizeTier', sizeTier);
 
-      if (module === 'svga-webp') {
-        const formatRadio = document.querySelector('input[name="svga-format"]:checked');
-        formData.append('format', formatRadio ? formatRadio.value : 'webp');
-      }
+    if (module === 'svga-webp') {
+      const formatRadio = document.querySelector('input[name="svga-format"]:checked');
+      const format = formatRadio ? formatRadio.value : 'webp';
+      formData.append('format', format);
+      console.log('SVGA format:', format);
+    }
 
-      if (module === 'video-svga') {
-        const bgRadio = document.querySelector('input[name="video-bg"]:checked');
-        formData.append('bgColor', bgRadio ? bgRadio.value : 'white');
-        formData.append('similarity', document.getElementById('tolerance-slider').value);
-      }
+    if (module === 'video-svga') {
+      const bgRadio = document.querySelector('input[name="video-bg"]:checked');
+      formData.append('bgColor', bgRadio ? bgRadio.value : 'white');
+      formData.append('similarity', document.getElementById('tolerance-slider').value);
+    }
 
-      progressBar.style.width = '30%';
-      progressStep.textContent = 'Uploading & Processing...';
+    progressBar.style.width = '30%';
+    progressStep.textContent = 'Uploading & Processing...';
 
-      const endpoint = module === 'svga-webp' ? '/api/convert/svga' : '/api/convert/video-svga';
-      const res = await fetch(endpoint, { method: 'POST', body: formData });
-      
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: 'Server error' }));
-        throw new Error(errData.error || 'Conversion failed');
-      }
-      
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'Conversion failed');
+    const endpoint = module === 'svga-webp' ? '/api/convert/svga' : '/api/convert/video-svga';
+    console.log('Sending request to:', endpoint);
+    
+    const res = await fetch(endpoint, { method: 'POST', body: formData });
+    
+    console.log('Response status:', res.status);
+    
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ error: 'Server error' }));
+      console.error('Conversion error:', errData);
+      throw new Error(errData.error || 'Conversion failed');
+    }
+    
+    const data = await res.json();
+    console.log('Conversion response:', data);
+    
+    if (!data.success) throw new Error(data.error || 'Conversion failed');
 
-      progressBar.style.width = '100%';
-      progressStep.textContent = 'Complete!';
+    progressBar.style.width = '100%';
+    progressStep.textContent = 'Complete!';
 
-      // Show result
-      setTimeout(async () => {
-        progressSection.style.display = 'none';
-        resultContent.style.display = 'block';
-        if (statusEl) statusEl.style.display = 'none';
+    // Show result
+    setTimeout(async () => {
+      progressSection.style.display = 'none';
+      resultContent.style.display = 'block';
+      if (statusEl) statusEl.style.display = 'none';
 
-        const infoEl = document.getElementById(`${prefix}-result-info`);
-        infoEl.innerHTML = `
-          <strong>✅ Conversion Complete</strong><br>
-          File: ${data.filename}<br>
-          Size: ${data.sizeMB} MB<br>
-          ${data.framesProcessed ? `Frames: ${data.framesProcessed}` : ''}
-        `;
+      const infoEl = document.getElementById(`${prefix}-result-info`);
+      infoEl.innerHTML = `
+        <strong>✅ Conversion Complete</strong><br>
+        File: ${data.filename}<br>
+        Size: ${data.sizeMB} MB<br>
+        ${data.framesProcessed ? `Frames: ${data.framesProcessed}` : ''}
+      `;
 
-        // Preview for WebP/GIF or JSON
-        const preview = document.getElementById('svga-preview');
-        const jsonViewer = document.getElementById('svga-json-viewer');
-        const jsonContent = document.getElementById('svga-json-content');
-        const formatRadio = document.querySelector('input[name="svga-format"]:checked');
-        const format = formatRadio ? formatRadio.value : 'webp';
+      // Preview for WebP/GIF or JSON
+      const preview = document.getElementById('svga-preview');
+      const jsonViewer = document.getElementById('svga-json-viewer');
+      const jsonContent = document.getElementById('svga-json-content');
+      const formatRadio = document.querySelector('input[name="svga-format"]:checked');
+      const format = formatRadio ? formatRadio.value : 'webp';
 
-        if (module === 'svga-webp' && format === 'json') {
-          preview.style.display = 'none';
-          jsonViewer.style.display = 'block';
-          
-          // Fetch the actual JSON to display it
-          try {
-            const jsonRes = await fetch(`/api/download/${data.jobId}`);
-            const jsonData = await jsonRes.json();
-            jsonContent.textContent = JSON.stringify(jsonData, null, 2);
-          } catch (e) {
-            jsonContent.textContent = 'Error loading JSON preview';
-          }
-        } else if (module === 'svga-webp') {
-          preview.style.display = 'block';
-          jsonViewer.style.display = 'none';
-          preview.innerHTML = `<img src="/api/download/${data.jobId}?t=${Date.now()}" alt="Preview" style="max-height:300px; width:auto; display:block; margin:0 auto;">`;
+      console.log('Showing result preview:', { module, format, jobId: data.jobId });
+
+      if (module === 'svga-webp' && format === 'json') {
+        console.log('Displaying JSON preview');
+        if (preview) preview.style.display = 'none';
+        if (jsonViewer) jsonViewer.style.display = 'block';
+        
+        // Fetch the actual JSON to display it
+        try {
+          const jsonRes = await fetch(`/api/download/${data.jobId}`);
+          const jsonData = await jsonRes.json();
+          if (jsonContent) jsonContent.textContent = JSON.stringify(jsonData, null, 2);
+        } catch (e) {
+          console.error('JSON preview error:', e);
+          if (jsonContent) jsonContent.textContent = 'Error loading JSON preview';
         }
+      } else if (module === 'svga-webp') {
+        console.log('Displaying image preview for format:', format);
+        if (preview) {
+          preview.style.display = 'block';
+          const previewUrl = `/api/download/${data.jobId}?t=${Date.now()}`;
+          console.log('Preview URL:', previewUrl);
+          
+          // Create preview with error handling
+          preview.innerHTML = `
+            <div class="preview-container">
+              <img 
+                src="${previewUrl}" 
+                alt="Converted ${format.toUpperCase()}" 
+                style="max-height:300px; width:auto; display:block; margin:0 auto;"
+                onload="console.log('${format.toUpperCase()} preview loaded successfully'); this.style.display='block';"
+                onerror="console.error('${format.toUpperCase()} preview failed'); this.style.display='none'; this.nextElementSibling.style.display='block';"
+              >
+              <div style="display:none; color: #888; padding: 2rem;">
+                <p>✓ Conversion Complete</p>
+                <p style="font-size: 0.875rem;">Preview not available - use Download button below</p>
+              </div>
+            </div>
+          `;
+        } else {
+          console.error('Preview element not found!');
+        }
+        if (jsonViewer) jsonViewer.style.display = 'none';
+      }
 
-        // Download button
-        const dlBtn = document.getElementById(`${prefix}-download-btn`);
+      // Download button
+      const dlBtn = document.getElementById(`${prefix}-download-btn`);
+      if (dlBtn) {
         dlBtn.onclick = () => {
+          console.log('Download button clicked:', { jobId: data.jobId, filename: data.filename });
           const a = document.createElement('a');
           a.href = `/api/download/${data.jobId}`;
           a.download = data.filename;
+          document.body.appendChild(a);
           a.click();
+          document.body.removeChild(a);
           showToast('Download started!', 'success');
         };
+      } else {
+        console.error('Download button not found:', `${prefix}-download-btn`);
+      }
 
-        // Save to history
-        addToHistory({
-          jobId: data.jobId,
-          filename: data.filename,
-          originalName: file.name,
-          module: module,
-          date: new Date().toISOString(),
-          size: data.sizeMB
-        });
-      }, 500);
+      // Save to history
+      addToHistory({
+        jobId: data.jobId,
+        filename: data.filename,
+        originalName: file.name,
+        module: module,
+        date: new Date().toISOString(),
+        size: data.sizeMB
+      });
+    }, 500);
 
-    } catch (err) {
-      progressBar.style.width = '100%';
-      progressBar.style.background = 'var(--red)';
-      progressStep.textContent = `Error: ${err.message}`;
-      showToast(err.message, 'error');
-      if (statusEl) statusEl.style.display = 'none';
-    }
-  }, 300); // 300ms debounce
+  } catch (err) {
+    progressBar.style.width = '100%';
+    progressBar.style.background = 'var(--red)';
+    progressStep.textContent = `Error: ${err.message}`;
+    showToast(err.message, 'error');
+    if (statusEl) statusEl.style.display = 'none';
+  }
 }
 
 // ===== TOAST =====

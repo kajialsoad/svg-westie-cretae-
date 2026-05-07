@@ -12,6 +12,7 @@ const os = require('os');
 const sharp = require('sharp');
 
 const svgaService = require('../services/svga');
+const svgaRenderer = require('../services/svgaRenderer');
 const ffmpegService = require('../services/ffmpeg');
 const compression = require('../services/compression');
 
@@ -69,6 +70,14 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
+    console.log('SVGA Conversion started:', {
+      jobId,
+      filename: req.file.originalname,
+      size: req.file.size,
+      format: req.body.format,
+      tier: req.body.sizeTier
+    });
+
     const format = req.body.format || 'webp';
     const tier = req.body.sizeTier || 'standard';
     const tierSettings = compression.getTierSettings(tier);
@@ -82,20 +91,28 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
     });
 
     // Step 1: Parse SVGA
+    console.log('Step 1: Parsing SVGA...');
     const movieData = await svgaService.parseSVGA(req.file.buffer);
     const metadata = svgaService.getMetadata(movieData);
-    const images = svgaService.extractFrames(movieData);
-
+    console.log('SVGA Metadata:', metadata);
+    
     jobs.set(jobId, { ...jobs.get(jobId), step: 'Extracting frames...', progress: 30 });
 
-    if (images.length === 0) {
-      throw new Error('No images found in SVGA file');
+    // Step 2: Render frames with canvas (proper transforms)
+    console.log('Step 2: Rendering frames with canvas...');
+    const renderedFrames = await svgaRenderer.renderAllFrames(movieData, movieData.images || {});
+    
+    console.log(`Rendered ${renderedFrames.length} frames`);
+
+    if (renderedFrames.length === 0) {
+      throw new Error('No frames could be rendered from SVGA file. The file may be corrupted or empty.');
     }
 
     // Step 2: Save frames as PNGs (only if not JSON)
     let outputBuffer, filename, mimetype;
 
     if (format === 'json') {
+      console.log('Step 3: Creating JSON output...');
       // For JSON format, we just return the movie data without frames/images (or with them as base64)
       // To keep it clean, we'll remove the large image buffers if they are too big, 
       // but the user said "understand JSON", so let's keep them as metadata info
@@ -114,16 +131,31 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
       filename = `metadata_${Date.now()}.json`;
       mimetype = 'application/json';
     } else {
+      console.log(`Step 3: Converting to ${format.toUpperCase()}...`);
       const framesDir = path.join(tempDir, 'frames');
       fs.mkdirSync(framesDir, { recursive: true });
 
-      for (let i = 0; i < images.length; i++) {
+      console.log(`Saving ${renderedFrames.length} rendered frames...`);
+      
+      // Save rendered frames as PNGs
+      for (let i = 0; i < renderedFrames.length; i++) {
         const framePath = path.join(framesDir, `frame_${String(i + 1).padStart(4, '0')}.png`);
-        await sharp(images[i].imageBuffer)
-          .resize(tierSettings.resolution, tierSettings.resolution, { fit: 'inside', withoutEnlargement: true })
-          .png()
-          .toFile(framePath);
+        try {
+          // Resize if needed
+          await sharp(renderedFrames[i].buffer)
+            .resize(tierSettings.resolution, tierSettings.resolution, { 
+              fit: 'inside', 
+              withoutEnlargement: true,
+              background: { r: 0, g: 0, b: 0, alpha: 0 }
+            })
+            .png()
+            .toFile(framePath);
+        } catch (err) {
+          console.warn(`Failed to save frame ${i}:`, err.message);
+        }
       }
+      
+      console.log(`Saved ${renderedFrames.length} frames`);
 
       jobs.set(jobId, { ...jobs.get(jobId), step: `Converting to ${format.toUpperCase()}...`, progress: 60 });
 
@@ -131,6 +163,7 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
       const outputPath = path.join(tempDir, `output.${format}`);
       const fps = Math.min(metadata.fps, tierSettings.fpsRange[1]);
 
+      console.log(`Step 3: Creating ${format} with fps=${fps}...`);
       if (format === 'gif') {
         await ffmpegService.framesToGIF(framesDir, 'frame_', outputPath, {
           fps,
@@ -142,6 +175,8 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
           quality: tierSettings.quality,
         });
       }
+      
+      console.log('Reading output file...');
       outputBuffer = fs.readFileSync(outputPath);
       filename = `converted_${Date.now()}.${format}`;
       mimetype = format === 'gif' ? 'image/gif' : 'image/webp';
@@ -166,19 +201,28 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
 
     ffmpegService.cleanupTempDir(tempDir);
 
+    console.log('SVGA Conversion complete:', {
+      jobId,
+      filename,
+      size: outputBuffer.length,
+      framesProcessed: renderedFrames.length
+    });
+
     res.json({
       success: true,
       jobId,
       filename,
       size: outputBuffer.length,
       sizeMB: (outputBuffer.length / (1024 * 1024)).toFixed(2),
+      framesProcessed: renderedFrames.length,
       metadata,
     });
 
   } catch (err) {
+    console.error('SVGA Conversion error:', err);
     ffmpegService.cleanupTempDir(tempDir);
     jobs.set(jobId, { id: jobId, status: 'error', error: err.message });
-    res.status(500).json({ error: err.message, jobId });
+    res.status(500).json({ error: err.message, stack: err.stack, jobId });
   }
 });
 
@@ -434,21 +478,45 @@ router.get('/status/:jobId', (req, res) => {
  */
 router.get('/download/:jobId', (req, res) => {
   const job = jobs.get(req.params.jobId);
+  
+  console.log('Download request for jobId:', req.params.jobId);
+  console.log('Available jobs:', Array.from(jobs.keys()));
+  
   if (!job) {
+    console.error('Job not found:', req.params.jobId);
     return res.status(404).json({ error: 'Job not found' });
   }
 
   if (job.status !== 'complete' || !job.result) {
+    console.error('Job not complete:', job.status);
     return res.status(400).json({ error: 'Job not complete yet' });
   }
 
+  console.log('Serving file:', {
+    filename: job.result.filename,
+    mimetype: job.result.mimetype,
+    size: job.result.buffer.length
+  });
+
   res.setHeader('Content-Type', job.result.mimetype);
-  res.setHeader('Content-Disposition', `attachment; filename="${job.result.filename}"`);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  
+  // Allow inline viewing for images, force download for others
+  if (job.result.mimetype.startsWith('image/') || job.result.mimetype === 'application/json') {
+    res.setHeader('Content-Disposition', `inline; filename="${job.result.filename}"`);
+  } else {
+    res.setHeader('Content-Disposition', `attachment; filename="${job.result.filename}"`);
+  }
+  
   res.setHeader('Content-Length', job.result.buffer.length);
+  res.setHeader('Cache-Control', 'no-cache');
+  
+  console.log('Sending buffer of size:', job.result.buffer.length);
   res.send(job.result.buffer);
 
   // Cleanup job data after download (optional, free memory)
   setTimeout(() => {
+    console.log('Cleaning up job:', req.params.jobId);
     jobs.delete(req.params.jobId);
   }, 60000); // Delete after 1 minute
 });
