@@ -32,3 +32,4 @@ tmp/
 
 # Output directories
 graphify-out/
+.vercel

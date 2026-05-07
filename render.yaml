@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: animsuite-pro
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: bash render-build.sh
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /api/health
