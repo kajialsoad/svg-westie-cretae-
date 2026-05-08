@@ -240,7 +240,9 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
     }
 
     const tier = req.body.sizeTier || 'standard';
-    const bgColor = req.body.bgColor || 'white';
+    let bgColor = req.body.bgColor || 'white';
+    if (bgColor === 'none') bgColor = 'auto';
+    
     const similarity = parseFloat(req.body.similarity) || 0.3;
     const blend = parseFloat(req.body.blend) || 0.2;
     const tierSettings = compression.getTierSettings(tier);
@@ -297,7 +299,7 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
       // Resize with sharp
       const resized = await sharp(buffer)
         .resize(compParams.width, compParams.height, { fit: 'inside', withoutEnlargement: true })
-        .png({ quality: compParams.quality, compressionLevel: 9 })
+        .png({ compressionLevel: 6 })
         .toBuffer();
       frames.push({ imageBuffer: resized });
     }

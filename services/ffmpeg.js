@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
+const sharp = require('sharp');
 
 /**
  * Execute an FFmpeg command and return a promise
@@ -105,14 +106,19 @@ async function removeBackground(inputPath, outputPath, options = {}) {
 
   switch (bgColor.toLowerCase()) {
     case 'green':
-      filterStr = `chromakey=0x00FF00:${similarity}:${blend},format=rgba`;
+      filterStr = `chromakey=#00FF00:${similarity}:${blend},format=rgba`;
       break;
     case 'black':
-      filterStr = `colorkey=0x000000:${similarity}:${blend},format=rgba`;
+      filterStr = `colorkey=#000000:${similarity}:${blend},format=rgba`;
       break;
     case 'white':
+      filterStr = `colorkey=#FFFFFF:${similarity}:${blend},format=rgba`;
+      break;
+    case 'auto_detected':
+      filterStr = `colorkey=${options.detectedHex}:${similarity}:${blend},format=rgba`;
+      break;
     default:
-      filterStr = `colorkey=0xFFFFFF:${similarity}:${blend},format=rgba`;
+      filterStr = `colorkey=#FFFFFF:${similarity}:${blend},format=rgba`;
       break;
   }
 
@@ -136,6 +142,73 @@ async function removeBackground(inputPath, outputPath, options = {}) {
  */
 async function removeBackgroundBatch(framePaths, outputDir, options = {}) {
   fs.mkdirSync(outputDir, { recursive: true });
+
+  if (options.bgColor === 'auto' && framePaths.length > 0) {
+    try {
+      const frameImg = sharp(framePaths[0]);
+      const { width: fw, height: fh } = await frameImg.metadata();
+      const sampleDepth = Math.min(10, Math.floor(fw * 0.05)); // 5% depth or 10px max
+
+      // Sample all 4 edges, 1px strips
+      const regions = [
+        { left: 0, top: 0, width: fw, height: sampleDepth },              // top edge
+        { left: 0, top: fh - sampleDepth, width: fw, height: sampleDepth }, // bottom edge
+        { left: 0, top: 0, width: sampleDepth, height: fh },              // left edge
+        { left: fw - sampleDepth, top: 0, width: sampleDepth, height: fh }, // right edge
+      ];
+
+      const colorCounts = {};
+      let totalAlpha = 0;
+      let totalSamples = 0;
+
+      for (const region of regions) {
+        const { data, info } = await sharp(framePaths[0])
+          .extract(region)
+          .resize(8, 8, { fit: 'fill' }) // downsample to 8x8 for speed
+          .raw()
+          .toBuffer({ resolveWithObject: true });
+
+        const channels = info.channels; // 3=RGB, 4=RGBA
+        const pixels = data.length / channels;
+
+        for (let i = 0; i < pixels; i++) {
+          const r = data[i * channels];
+          const g = data[i * channels + 1];
+          const b = data[i * channels + 2];
+          const a = channels === 4 ? data[i * channels + 3] : 255;
+
+          totalAlpha += a;
+          totalSamples++;
+
+          // Quantize to nearest 16 for grouping similar colors, clamped to 255
+          const qr = Math.min(255, Math.round(r / 16) * 16);
+          const qg = Math.min(255, Math.round(g / 16) * 16);
+          const qb = Math.min(255, Math.round(b / 16) * 16);
+          const key = `${qr},${qg},${qb}`;
+          colorCounts[key] = (colorCounts[key] || 0) + 1;
+        }
+      }
+
+      const avgAlpha = totalSamples > 0 ? totalAlpha / totalSamples : 255;
+
+      if (avgAlpha < 10) {
+        // Already transparent
+        console.log('Auto-Detect: Video already has transparent background.');
+        options.bgColor = 'none';
+      } else {
+        // Pick dominant edge color
+        const dominantKey = Object.entries(colorCounts).sort((a, b) => b[1] - a[1])[0][0];
+        const [r, g, b] = dominantKey.split(',').map(Number);
+        const hex = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+        console.log(`Auto-Detect: Dominant background color detected as ${hex} (from edge sampling)`);
+        options.bgColor = 'auto_detected';
+        options.detectedHex = hex;
+      }
+    } catch (e) {
+      console.warn('Auto-Detect Warning: Failed to sample background color. Skipping removal.', e.message);
+      options.bgColor = 'none';
+    }
+  }
 
   const processedPaths = [];
 

@@ -69,7 +69,7 @@ function setFile(module, file) {
   const prefix = module === 'svga-webp' ? 'svga' : 'video';
   const zoneId = module === 'svga-webp' ? 'svga-upload-zone' : 'video-upload-zone';
   const newBtnId = module === 'svga-webp' ? 'svga-new-btn' : 'video-new-btn';
-  const convertWrapperId = module === 'svga-webp' ? 'svga-convert-wrapper' : null;
+  const convertWrapperId = module === 'svga-webp' ? 'svga-convert-wrapper' : 'video-convert-wrapper';
   
   const zone = document.getElementById(zoneId);
   const newBtn = document.getElementById(newBtnId);
@@ -87,17 +87,38 @@ function setFile(module, file) {
   
   if (newBtn) newBtn.style.display = 'block';
   
-  // Show preview for SVGA
+  if (convertWrapperId) {
+    document.getElementById(convertWrapperId).style.display = 'block';
+  }
+  
+  // Show preview
   if (module === 'svga-webp') {
     showSVGAPreview(file);
-    // Show convert button
-    if (convertWrapperId) {
-      document.getElementById(convertWrapperId).style.display = 'block';
-    }
   } else {
-    // Auto-trigger for video
-    startConversion(module);
+    showVideoPreview(file);
   }
+}
+
+function showVideoPreview(file) {
+  const previewBox = document.getElementById('video-upload-preview');
+  const fileNameEl = document.getElementById('video-file-name');
+  const fileSizeEl = document.getElementById('video-file-size');
+  const playerCanvas = document.getElementById('video-player-canvas');
+  
+  previewBox.style.display = 'block';
+  fileNameEl.textContent = file.name;
+  fileSizeEl.textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+
+  const url = URL.createObjectURL(file);
+  playerCanvas.innerHTML = `
+    <video src="${url}" autoplay loop muted playsinline style="
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
+      margin: 0 auto;
+      object-fit: contain;
+    "></video>
+  `;
 }
 
 // SVGA Preview is now handled by svga-preview.js
@@ -113,7 +134,7 @@ function resetModule(module) {
   const zone = document.getElementById(zoneId);
   const newBtn = document.getElementById(newBtnId);
   const result = document.getElementById(resultId);
-  const convertWrapper = document.getElementById('svga-convert-wrapper');
+  const convertWrapper = document.getElementById(`${prefix}-convert-wrapper`);
 
   zone.classList.remove('has-file');
   const content = zone.querySelector('.upload-content');
@@ -153,6 +174,9 @@ function resetModule(module) {
     const previewBox = document.getElementById('svga-upload-preview');
     if (previewBox) previewBox.style.display = 'none';
     // Player cleanup is handled by svga-preview.js
+  } else if (module === 'video-svga') {
+    const previewBox = document.getElementById('video-upload-preview');
+    if (previewBox) previewBox.style.display = 'none';
   }
   
   showToast('Reset complete', 'info');
@@ -168,23 +192,10 @@ document.addEventListener('click', (e) => {
     const radio = card.querySelector('input[type="radio"]');
     if (radio) {
       radio.checked = true;
-      // Don't auto-trigger for SVGA, only for video
-      const module = state.currentPage === 'svga-webp' ? 'svga-webp' : 'video-svga';
-      if (state.files[module] && module === 'video-svga') {
-        startConversion(module);
-      }
+      // Removed auto-trigger to allow manual convert
     }
   }
-  const bgOpt = e.target.closest('.bg-option');
-  if (bgOpt) {
-    bgOpt.closest('.bg-options').querySelectorAll('.bg-option').forEach(o => o.classList.remove('selected'));
-    bgOpt.classList.add('selected');
-    const radio = bgOpt.querySelector('input[type="radio"]');
-    if (radio) {
-      radio.checked = true;
-      if (state.files['video-svga']) startConversion('video-svga');
-    }
-  }
+
   const fmtOpt = e.target.closest('.format-option');
   if (fmtOpt) {
     const group = fmtOpt.closest('.format-options');
@@ -245,9 +256,8 @@ async function startConversion(module) {
     }
 
     if (module === 'video-svga') {
-      const bgRadio = document.querySelector('input[name="video-bg"]:checked');
-      formData.append('bgColor', bgRadio ? bgRadio.value : 'white');
-      formData.append('similarity', document.getElementById('tolerance-slider').value);
+      formData.append('bgColor', 'none');
+      formData.append('similarity', '0.3');
     }
 
     progressBar.style.width = '30%';
@@ -296,10 +306,10 @@ async function startConversion(module) {
         ${data.framesProcessed ? `Frames: ${data.framesProcessed}` : ''}
       `;
 
-      // Preview for WebP/GIF or JSON
-      const convertedPreviewBox = document.getElementById('svga-converted-preview-box');
-      const convertedCanvas = document.getElementById('svga-converted-canvas');
-      const convertedDetails = document.getElementById('svga-converted-details');
+      // Preview logic
+      const convertedPreviewBox = document.getElementById(`${prefix}-converted-preview-box`);
+      const convertedCanvas = document.getElementById(`${prefix}-converted-canvas`);
+      const convertedDetails = document.getElementById(`${prefix}-converted-details`);
       const jsonViewer = document.getElementById('svga-json-viewer');
       const jsonContent = document.getElementById('svga-json-content');
       const formatRadio = document.querySelector('input[name="svga-format"]:checked');
@@ -350,6 +360,45 @@ async function startConversion(module) {
           convertedDetails.innerHTML = `
             <span>${data.filename}</span>
             <span>${data.sizeMB} MB</span>
+          `;
+        }
+      } else if (module === 'video-svga') {
+        if (convertedPreviewBox) convertedPreviewBox.style.display = 'block';
+        
+        if (convertedCanvas) {
+          convertedCanvas.innerHTML = '<div style="color:#888;">Loading SVGA Preview...</div>';
+          
+          const previewUrl = `/api/download/${data.jobId}?preview=1&t=${Date.now()}`;
+          
+          if (typeof SVGA !== 'undefined') {
+            const parser = new SVGA.Parser();
+            parser.load(previewUrl, (videoItem) => {
+              convertedCanvas.innerHTML = '';
+              const nativeW = videoItem.videoSize.width || 300;
+              const nativeH = videoItem.videoSize.height || 300;
+              
+              const canvas = document.createElement('canvas');
+              canvas.width = nativeW;
+              canvas.height = nativeH;
+              // CSS handles the scaling via .player-canvas canvas rule
+              convertedCanvas.appendChild(canvas);
+              
+              const player = new SVGA.Player(canvas);
+              player.setVideoItem(videoItem);
+              player.startAnimation();
+            }, (err) => {
+              console.error('SVGA load error:', err);
+              convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA Preview failed. Please download to view.</div>';
+            });
+          } else {
+            convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA library not loaded</div>';
+          }
+        }
+        
+        if (convertedDetails) {
+          convertedDetails.innerHTML = `
+            <span>${data.filename}</span>
+            <span class="size-badge">${data.sizeMB} MB</span>
           `;
         }
       }
