@@ -100,103 +100,7 @@ function setFile(module, file) {
   }
 }
 
-let svgaPlayer = null;
-let svgaParser = null;
-
-function showSVGAPreview(file) {
-  const previewBox = document.getElementById('svga-upload-preview');
-  const fileNameEl = document.getElementById('svga-file-name');
-  const fileSizeEl = document.getElementById('svga-file-size');
-  const playerCanvas = document.getElementById('svga-player-canvas');
-  
-  console.log('showSVGAPreview called with file:', file.name, file.type);
-  
-  previewBox.style.display = 'block';
-  fileNameEl.textContent = file.name;
-  fileSizeEl.textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
-
-  const url = URL.createObjectURL(file);
-  console.log('Created blob URL:', url);
-  
-  if (file.name.toLowerCase().endsWith('.svg') || file.type === 'image/svg+xml') {
-    console.log('Treating as SVG image');
-    playerCanvas.innerHTML = `<img src="${url}" style="max-height:100%; max-width:100%;">`;
-    // We don't revoke immediately because the img needs it
-  } else {
-    console.log('Treating as SVGA animation');
-    // Treat as SVGA - reinitialize player each time for clean state
-    playerCanvas.innerHTML = '<div style="color: #888; text-align: center; padding: 2rem;">Loading preview...</div>';
-    
-    // Stop existing player if any
-    if (svgaPlayer) {
-      try {
-        svgaPlayer.stopAnimation();
-        svgaPlayer.clear();
-      } catch (e) {
-        console.log('Player cleanup:', e);
-      }
-    }
-    
-    // Create fresh player and parser (parser doesn't take selector)
-    console.log('Creating new SVGA Player and Parser');
-    svgaPlayer = new SVGA.Player('#svga-player-canvas');
-    svgaParser = new SVGA.Parser();
-
-    console.log('Loading SVGA from URL...');
-    
-    // Set a timeout for loading
-    const loadTimeout = setTimeout(() => {
-      console.warn('SVGA loading timeout - showing placeholder');
-      playerCanvas.innerHTML = `
-        <div style="color: #888; text-align: center; padding: 2rem;">
-          <svg width="64" height="64" viewBox="0 0 64 64" fill="none" style="opacity: 0.5; margin-bottom: 1rem;">
-            <rect x="8" y="16" width="48" height="40" rx="8" stroke="currentColor" stroke-width="2" />
-            <circle cx="32" cy="32" r="8" stroke="currentColor" stroke-width="2" />
-          </svg>
-          <p>Preview not available</p>
-          <p style="font-size: 0.875rem; opacity: 0.7;">File will be converted normally</p>
-        </div>
-      `;
-    }, 5000); // 5 second timeout
-    
-    svgaParser.load(url, (videoItem) => {
-      clearTimeout(loadTimeout);
-      console.log('SVGA loaded successfully:', videoItem);
-      try {
-        svgaPlayer.setVideoItem(videoItem);
-        svgaPlayer.startAnimation();
-        console.log('SVGA animation started');
-      } catch (e) {
-        console.error('Failed to start animation:', e);
-        playerCanvas.innerHTML = `
-          <div style="color: #888; text-align: center; padding: 2rem;">
-            <p>✓ File loaded</p>
-            <p style="font-size: 0.875rem; opacity: 0.7;">Animation preview unavailable</p>
-          </div>
-        `;
-      }
-      URL.revokeObjectURL(url);
-    }, (err) => {
-      clearTimeout(loadTimeout);
-      console.error('SVGA Preview Error:', err);
-      
-      // Show a friendly message instead of error
-      playerCanvas.innerHTML = `
-        <div style="color: #888; text-align: center; padding: 2rem;">
-          <svg width="64" height="64" viewBox="0 0 64 64" fill="none" style="opacity: 0.5; margin-bottom: 1rem;">
-            <rect x="8" y="16" width="48" height="40" rx="8" stroke="currentColor" stroke-width="2" />
-            <path d="M24 28L32 36L40 28" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-          </svg>
-          <p>Preview not available</p>
-          <p style="font-size: 0.875rem; opacity: 0.7;">File will be converted normally</p>
-        </div>
-      `;
-      
-      showToast('Preview unavailable, but conversion will work', 'info');
-      URL.revokeObjectURL(url);
-    });
-  }
-}
+// SVGA Preview is now handled by svga-preview.js
 
 function resetModule(module) {
   state.files[module] = null;
@@ -248,7 +152,7 @@ function resetModule(module) {
   if (module === 'svga-webp') {
     const previewBox = document.getElementById('svga-upload-preview');
     if (previewBox) previewBox.style.display = 'none';
-    if (svgaPlayer) svgaPlayer.stopAnimation();
+    // Player cleanup is handled by svga-preview.js
   }
   
   showToast('Reset complete', 'info');
@@ -375,6 +279,14 @@ async function startConversion(module) {
       progressSection.style.display = 'none';
       resultContent.style.display = 'block';
       if (statusEl) statusEl.style.display = 'none';
+      
+      console.log('📍 Result section now visible');
+      
+      // Scroll to result - AFTER a small delay to ensure rendering
+      setTimeout(() => {
+        resultArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        console.log('📍 Scrolled to result area');
+      }, 100);
 
       const infoEl = document.getElementById(`${prefix}-result-info`);
       infoEl.innerHTML = `
@@ -410,28 +322,54 @@ async function startConversion(module) {
       } else if (module === 'svga-webp') {
         console.log('Displaying image preview for format:', format);
         if (preview) {
-          preview.style.display = 'block';
+          // Clear preview
+          preview.innerHTML = '';
+          preview.style.display = 'flex';
+          preview.style.minHeight = '300px';
+          preview.style.background = 'rgba(0, 0, 0, 0.3)';
+          
           const previewUrl = `/api/download/${data.jobId}?t=${Date.now()}`;
           console.log('Preview URL:', previewUrl);
           
-          // Create preview with error handling
-          preview.innerHTML = `
-            <div class="preview-container">
-              <img 
-                src="${previewUrl}" 
-                alt="Converted ${format.toUpperCase()}" 
-                style="max-height:300px; width:auto; display:block; margin:0 auto;"
-                onload="console.log('${format.toUpperCase()} preview loaded successfully'); this.style.display='block';"
-                onerror="console.error('${format.toUpperCase()} preview failed'); this.style.display='none'; this.nextElementSibling.style.display='block';"
-              >
-              <div style="display:none; color: #888; padding: 2rem;">
-                <p>✓ Conversion Complete</p>
-                <p style="font-size: 0.875rem;">Preview not available - use Download button below</p>
-              </div>
-            </div>
-          `;
+          // Create image element using DOM (not innerHTML)
+          const img = document.createElement('img');
+          img.src = previewUrl;
+          img.alt = `Converted ${format.toUpperCase()}`;
+          
+          // Apply styles directly
+          img.style.display = 'block';
+          img.style.margin = '0 auto';
+          img.style.maxWidth = '100%';
+          img.style.height = 'auto';
+          img.style.minWidth = '100px';
+          img.style.minHeight = '100px';
+          img.style.visibility = 'visible';
+          img.style.opacity = '1';
+          img.style.position = 'relative';
+          img.style.zIndex = '100';
+          img.style.border = '3px solid lime'; // DEBUG
+          
+          img.onload = function() {
+            console.log('✅ IMAGE LOADED AND VISIBLE');
+            console.log('Natural dimensions:', this.naturalWidth, 'x', this.naturalHeight);
+            console.log('Rendered dimensions:', this.width, 'x', this.height);
+            console.log('Display:', window.getComputedStyle(this).display);
+            console.log('Visibility:', window.getComputedStyle(this).visibility);
+            console.log('Opacity:', window.getComputedStyle(this).opacity);
+            console.log('Position:', window.getComputedStyle(this).position);
+          };
+          
+          img.onerror = function() {
+            console.error('❌ IMAGE LOAD FAILED');
+            preview.innerHTML = '<div style="color:#888;padding:2rem;text-align:center;"><p style="font-size:1.2rem;">✓ Conversion Complete</p><p style="font-size:0.875rem;margin-top:0.5rem;">Preview not available - use Download button below</p></div>';
+          };
+          
+          // Append to preview
+          preview.appendChild(img);
+          console.log('✅ Image element appended to preview');
+          
         } else {
-          console.error('Preview element not found!');
+          console.error('❌ Preview element #svga-preview NOT FOUND!');
         }
         if (jsonViewer) jsonViewer.style.display = 'none';
       }
