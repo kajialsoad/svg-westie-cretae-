@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+
+<ExtensionManifest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Version="6.0" ExtensionBundleId="com.errnull.SVGAConverter_AE" ExtensionBundleVersion="1.0.1" ExtensionBundleName="SVGAConverter_AE">
+    <ExtensionList>
+        <Extension Id="com.errnull.SVGAConverter_AE" Version="1.0.1"/>
+    </ExtensionList>
+    <ExecutionEnvironment>
+        <HostList>
+            <Host Name="AEFT" Version="[13.0,99.0]"/>
+            <Host Name="AEFX" Version="[13.0,99.0]"/>
+            <!-- Illustrator -->
+            <!-- <Host Name="ILST" Version="[18.0,18.9]" />-->
+            <!-- InDesign -->
+            <!-- <Host Name="IDSN" Version="[10.0,10.9]" /> -->
+            <!-- Premiere -->
+            <!-- <Host Name="PPRO" Version="[8.0,8.9]" /> -->
+            <!-- AfterEffects -->
+            <!-- <Host Name="AEFT" Version="[13.0,13.9]" /> -->
+            <!-- PRELUDE -->
+            <!-- <Host Name="PRLD" Version="[3.0,3.9]" />   -->
+            <!-- FLASH Pro -->
+            <!-- <Host Name="FLPR" Version="[14.0,14.9]" /> -->
+        </HostList>
+        <LocaleList>
+            <Locale Code="All"/>
+        </LocaleList>
+        <RequiredRuntimeList>
+            <RequiredRuntime Name="CSXS" Version="6.0"/>
+        </RequiredRuntimeList>
+    </ExecutionEnvironment>
+    <DispatchInfoList>
+        <Extension Id="com.errnull.SVGAConverter_AE">
+            <DispatchInfo>
+                <Resources>
+                    <MainPath>./index.html</MainPath>
+                    <ScriptPath>./jsx/svga.jsx</ScriptPath>
+                    <CEFCommandLine>
+                        <Parameter>--enable-nodejs</Parameter>
+                        <!--<Parameter>&#45;&#45;mixed-context</Parameter>-->
+                        <!--<Parameter>&#45;&#45;enable-media-stream</Parameter>-->
+                    </CEFCommandLine>
+                </Resources>
+                <Lifecycle>
+                    <AutoVisible>true</AutoVisible>
+                    <!-- 设置扩展面板为可视 -->
+                    <!--<StartOn></StartOn>-->
+                    <!-- 打开程序的时候自启动插件 -->
+                </Lifecycle>
+                <UI>
+                    <Type>Modeless</Type>
+                    <!-- 设置扩展显示为面板模式 -->
+                    <Menu>SVGAConverter_AE</Menu>
+                    <!-- 设置扩展标题 -->
+                    <Geometry>
+                        <!-- 设置面板尺寸 -->
+                        <Size>
+                            <Width>470</Width>
+                            <Height>500</Height>
+                        </Size>
+                        <MinSize>
+                            <Width>470</Width>
+                            <Height>500</Height>
+                        </MinSize>
+                        <MaxSize>
+                            <Width>470</Width>
+                            <Height>500</Height>
+                        </MaxSize>
+                    </Geometry>
+                    <Icons/>
+                </UI>
+            </DispatchInfo>
+        </Extension>
+    </DispatchInfoList>
+</ExtensionManifest>

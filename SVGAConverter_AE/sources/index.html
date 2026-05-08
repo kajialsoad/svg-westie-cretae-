@@ -1,0 +1,252 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html lang="en">
+<script>
+    var _hmt = _hmt || [];
+    (function () {
+        var hm = document.createElement("script");
+        hm.src = "https://hm.baidu.com/hm.js?60a6c58c2a0e99ed59ad6b39064f7602";
+        var s = document.getElementsByTagName("script")[0];
+        s.parentNode.insertBefore(hm, s);
+    })();
+</script>
+
+<head>
+    <meta http-equiv="content-type" content="text/html" charset="UTF-8">
+
+    <link href="./src/css/bootstrap.min.css" rel="stylesheet">
+
+    <script type="text/javascript" src="./src/helpers/CSInterface.js"></script>
+    <script type="text/javascript" src="./src/helpers/CSInterfaceHelper.js"></script>
+    <script src="./src/assets/jquery.min.js"></script>
+    <script src="./src/actions/PageActions.js"></script>
+    <script src="./src/assets/jszip.min.js"></script>
+    <script src="./src/assets/jszip-utils.min.js"></script>
+    <script src="./src/assets/howler.min.js"></script>
+    <script src="./src/assets/svga.min.js"></script>
+    <script type="text/javascript">
+        loadJSX("compsManager.jsx");
+    </script>
+
+    <title>SVGAConverter</title>
+</head>
+
+<style>
+    body {
+        background-color: #474747;
+    }
+
+    .container {
+        margin-left: 20px;
+    }
+
+    .clearfix {
+        margin-top: 4%;
+    }
+
+    .col-md-4 {
+        float: left;
+    }
+
+    .col-md-5 {
+        float: left;
+        position: relative;
+        min-height: 1px;
+        padding-right: 15px;
+        padding-left: 15px
+    }
+
+    .progressBarDiv {
+        margin-top: 24px;
+    }
+
+    .dropDownItem {
+        margin-left: 24px;
+    }
+
+    #startConvertBtn {
+        float: left;
+        width: 110px;
+
+    }
+
+    #dropDownBtn {
+        float: left;
+        height: 34px;
+        margin-left: 1px;
+    }
+
+    #dropGroupDiv {}
+
+    #selectFile {
+        margin-left: 6px;
+    }
+
+    #dropDownMenu {
+        text-align: left;
+        left: 12 !important;
+        width: 140px;
+    }
+
+    #storageCounter {
+        float: right;
+        color: gray;
+        margin-right: 20;
+    }
+</style>
+
+<body>
+
+    <div class="container">
+
+        <div class="row clearfix">
+
+            <div class="col-md-4 column">
+                <button type="button" class="btn btn-default btn-block btn-success" id="selectPathBtn" onclick="selectPath()">输出路径</button>
+            </div>
+            <div id="dropGroupDiv" class="col-md-5 btn-group">
+                <button type="button" class="btn btn-default btn-block btn-success" id="startConvertBtn" disabled onclick="startConvert()">开始转换 - 2.0</button>
+                <button data-toggle="dropdown" class="btn dropdown-toggle btn-success" id="dropDownBtn" disabled onclick="openMenu()">
+                    <span class="caret"></span>
+                </button>
+                <ul id="dropDownMenu" class="dropdown-menu">
+                    <li>
+                        <a class="dropDownItem" href="javascript:void(0)" onclick="changeToVersion('1.0')">SVGA - 1.0</a>
+                    </li>
+                    <li>
+                        <a class="dropDownItem" href="javascript:void(0)" onclick="changeToVersion('1.5')">SVGA - 1.5</a>
+                    </li>
+                    <li>
+                        <a class="dropDownItem" href="javascript:void(0)" onclick="changeToVersion('2.0')">SVGA - 2.0</a>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="col-md-4 column">
+                <button type="button" class="btn btn-default btn-block btn-success" id="selectFile" onclick="selectFile()">选择播放文件</button>
+            </div>
+
+        </div>
+
+        <div class="row clearfix">
+            <div class="col-md-12 column">
+                <div id="canvas" style="background-color: #333333; width: 400px; height: 400px"></div>
+            </div>
+        </div>
+        <div id="storageCounter"></div>
+    </div>
+
+    <script type="text/javascript">
+        document.onclick = function (e) {
+            if (e.target.id != "dropDownBtn") {
+                document.getElementById("dropGroupDiv").className = "col-md-5 btn-group";
+            }
+        }
+
+        function alertMessages(message) {
+            csInterface.evalScript("alertMessage('" + message + "');");
+        }
+
+        function confirmMessages(message, callbackTrue, callbackFalse) {
+            csInterface.evalScript("confirmMessage('" + message + "');", function (result) {
+
+                if (result == 'true') {
+                    callbackTrue();
+
+                } else {
+                    callbackFalse();
+                }
+            });
+        }
+
+        function downloadFile(uri, filename, callback) {
+            var stream = fs.createWriteStream(filename);
+            request(uri).pipe(stream).on('close', callback);
+        }
+
+        var infoUrl = 'https://raw.githubusercontent.com/yyued/SVGA-AEConverter/master/updateInfo';
+        var infoName = nodePath.join(csInterface.getSystemPath(SystemPath.MY_DOCUMENTS), '.updateInfo');
+
+        downloadFile(infoUrl, infoName, function () {
+
+            var newestVersion = parseInt(fs.readFileSync(infoName, 'utf-8').split('v').pop());
+            var currentVersion = parseInt(fs.readFileSync(nodePath.join(CURRENT_PROJECT_PATH, 'updateInfo'), 'utf-8').split('v').pop());
+            fs.unlinkSync(infoName);
+
+            if (currentVersion < newestVersion) {
+
+                confirmMessages("主人，现在有更新的版本了哦，更新一下? \\n tip: 下载过慢可以到官网下载最新版本安装哦。", function () {
+
+                    var selectPathBtn = document.getElementById("selectPathBtn");
+                    selectPathBtn.disabled = true;
+                    var selectFile = document.getElementById("selectFile");
+                    selectFile.disabled = true;
+
+                    var zxpUrl = "https://raw.githubusercontent.com/yyued/SVGA-AEConverter/master/build/1.1.0/SVGAConverter_AE.zxp";
+                    var zxpFile = nodePath.join(csInterface.getSystemPath(SystemPath.MY_DOCUMENTS), 'updateAE.zxp');
+                    downloadFile(zxpUrl, zxpFile, function () {
+
+                        deleteFlider(CURRENT_PROJECT_PATH, true, false, function () {
+                            if (csInterface.getOSInformation().indexOf("Mac") >= 0) {
+                                var program = "unzip -o -d " + CURRENT_PROJECT_PATH.replace('Application ', 'Application\\ ') + " " + zxpFile;
+                                spawn.exec(program, function () {
+
+                                    alertMessages("更新完成，即将重启。");
+
+                                    fs.unlinkSync(zxpFile);
+                                    csInterface.closeExtension()
+                                });
+                            } else {
+
+                                var zipToolUrl = "https://raw.githubusercontent.com/yyued/SVGA-AEConverter/master/zip.exe";
+                                var zipToolFile = nodePath.join(csInterface.getSystemPath(SystemPath.MY_DOCUMENTS), 'zip.exe');
+
+                                downloadFile(zipToolUrl, zipToolFile, function () {
+
+                                    var program = zipToolFile + " " + zxpFile + " -d " + "\"" + CURRENT_PROJECT_PATH + "\"";
+                                    spawn.exec(program, function () {
+
+                                        alertMessages("更新完成，即将重启。");
+
+                                        fs.unlinkSync(zxpFile);
+                                        fs.unlinkSync(zipToolFile);
+                                        csInterface.closeExtension()
+                                    });
+
+                                });
+                            }
+                        });
+                    });
+                }, function () {
+                });
+            }
+        });
+        parser = new SVGA.Parser('#canvas');
+
+        var loadingName = csInterface.getSystemPath(SystemPath.APPLICATION) + "/src/res/loading.svga";
+
+        parser.load(loadingName, function (videoItem) {
+            player = new SVGA.Player('#canvas');
+            player.setVideoItem(videoItem);
+            player.startAnimation()
+        });
+
+        /// 右键菜单。
+        csInterface.setContextMenu(
+            '<Menu>' +
+            '<MenuItem Id="playMovie" Label="Play" Enabled="true" Checked="false" />' +
+            '<MenuItem Id="stopMovie" Label="Stop" Enabled="true" Checked="false" />' +
+            '</Menu>',
+
+            function (menu) {
+                switch (menu) {
+                    case "playMovie": player.startAnimation(); break;
+                    case "stopMovie": player.pauseAnimation(); break;
+
+                    default: break;
+                }
+            });
+    </script>
+
+</body>
+
+</html>
