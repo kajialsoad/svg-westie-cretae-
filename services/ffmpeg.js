@@ -95,6 +95,12 @@ async function removeBackground(inputPath, outputPath, options = {}) {
   const similarity = options.similarity || 0.3;
   const blend = options.blend || 0.2;
 
+  // If bgColor is 'none', just copy the file without processing
+  if (bgColor.toLowerCase() === 'none') {
+    fs.copyFileSync(inputPath, outputPath);
+    return;
+  }
+
   let filterStr;
 
   switch (bgColor.toLowerCase()) {
@@ -181,7 +187,7 @@ async function framesToWebP(framesDir, outputPath, options = {}) {
  */
 async function framesToWebPSequence(framesDir, prefix, outputPath, options = {}) {
   const fps = options.fps || 24;
-  const quality = options.quality || 80;
+  const quality = options.quality || 90;
   const loop = options.loop !== undefined ? options.loop : 0;
 
   const inputPattern = path.join(framesDir, `${prefix}%04d.png`);
@@ -190,13 +196,13 @@ async function framesToWebPSequence(framesDir, prefix, outputPath, options = {})
     '-y',
     '-framerate', String(fps),
     '-i', inputPattern,
-    '-vcodec', 'libwebp',
-    '-lossless', '0',
+    '-vcodec', 'libwebp_anim',
+    '-lossless', '1',
     '-compression_level', '4',
-    '-quality', String(quality),
+    '-quality', '100',
     '-loop', String(loop),
     '-an',
-    '-pix_fmt', 'yuva420p',
+    '-pix_fmt', 'rgba',
     outputPath,
   ];
 
@@ -238,7 +244,7 @@ async function framesToGIF(framesDir, prefix, outputPath, options = {}) {
   ]);
 
   // Cleanup palette
-  try { fs.unlinkSync(palettePath); } catch {}
+  try { fs.unlinkSync(palettePath); } catch { }
 }
 
 /**

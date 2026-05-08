@@ -275,9 +275,12 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
       maxWidth: compParams.width,
     });
 
-    jobs.set(jobId, { ...jobs.get(jobId), step: `Removing ${bgColor} background...`, progress: 35 });
+    const processingMessage = bgColor.toLowerCase() === 'none' 
+      ? 'Processing frames...' 
+      : `Removing ${bgColor} background...`;
+    jobs.set(jobId, { ...jobs.get(jobId), step: processingMessage, progress: 35 });
 
-    // Step 3: Remove background
+    // Step 3: Remove background (or copy if 'none')
     const processedDir = path.join(tempDir, 'processed');
     const processedPaths = await ffmpegService.removeBackgroundBatch(framePaths, processedDir, {
       bgColor,

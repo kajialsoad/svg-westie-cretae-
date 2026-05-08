@@ -267,7 +267,12 @@
           <p class="progress-step" id="svga-progress-step">Starting...</p>
         </div>
         <div class="result-section" id="svga-result-content" style="display:none;">
-          <div class="result-preview" id="svga-preview"></div>
+          <!-- Converted Preview - same structure as Source Preview -->
+          <div class="upload-preview-box" id="svga-converted-preview-box">
+            <h3 class="section-title">Converted Preview</h3>
+            <div id="svga-converted-canvas" class="player-canvas"></div>
+            <div class="file-details" id="svga-converted-details"></div>
+          </div>
           <div class="json-viewer" id="svga-json-viewer" style="display:none;">
             <pre><code id="svga-json-content"></code></pre>
           </div>
@@ -318,6 +323,11 @@
         <div class="bg-selector">
           <h3 class="section-title">Background Color to Remove</h3>
           <div class="bg-options">
+            <label class="bg-option" data-color="none">
+              <input type="radio" name="video-bg" value="none">
+              <div class="bg-swatch" style="background: linear-gradient(45deg, #333 25%, transparent 25%, transparent 75%, #333 75%, #333), linear-gradient(45deg, #333 25%, #555 25%, #555 75%, #333 75%, #333); background-size: 20px 20px; background-position: 0 0, 10px 10px; border: 2px solid #666;"></div>
+              <span>None</span>
+            </label>
             <label class="bg-option selected" data-color="white">
               <input type="radio" name="video-bg" value="white" checked>
               <div class="bg-swatch" style="background: white; border: 2px solid #333;"></div>

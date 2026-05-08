@@ -297,17 +297,16 @@ async function startConversion(module) {
       `;
 
       // Preview for WebP/GIF or JSON
-      const preview = document.getElementById('svga-preview');
+      const convertedPreviewBox = document.getElementById('svga-converted-preview-box');
+      const convertedCanvas = document.getElementById('svga-converted-canvas');
+      const convertedDetails = document.getElementById('svga-converted-details');
       const jsonViewer = document.getElementById('svga-json-viewer');
       const jsonContent = document.getElementById('svga-json-content');
       const formatRadio = document.querySelector('input[name="svga-format"]:checked');
       const format = formatRadio ? formatRadio.value : 'webp';
 
-      console.log('Showing result preview:', { module, format, jobId: data.jobId });
-
       if (module === 'svga-webp' && format === 'json') {
-        console.log('Displaying JSON preview');
-        if (preview) preview.style.display = 'none';
+        if (convertedPreviewBox) convertedPreviewBox.style.display = 'none';
         if (jsonViewer) jsonViewer.style.display = 'block';
         
         // Fetch the actual JSON to display it
@@ -316,62 +315,43 @@ async function startConversion(module) {
           const jsonData = await jsonRes.json();
           if (jsonContent) jsonContent.textContent = JSON.stringify(jsonData, null, 2);
         } catch (e) {
-          console.error('JSON preview error:', e);
           if (jsonContent) jsonContent.textContent = 'Error loading JSON preview';
         }
       } else if (module === 'svga-webp') {
-        console.log('Displaying image preview for format:', format);
-        if (preview) {
-          // Clear preview
-          preview.innerHTML = '';
-          preview.style.display = 'flex';
-          preview.style.minHeight = '300px';
-          preview.style.background = 'rgba(0, 0, 0, 0.3)';
+        if (convertedPreviewBox) convertedPreviewBox.style.display = 'block';
+        if (jsonViewer) jsonViewer.style.display = 'none';
+        
+        // Render image in player-canvas (same as Source Preview)
+        if (convertedCanvas) {
+          convertedCanvas.innerHTML = '';
           
-          const previewUrl = `/api/download/${data.jobId}?t=${Date.now()}`;
-          console.log('Preview URL:', previewUrl);
+          const previewUrl = `/api/download/${data.jobId}?preview=1&t=${Date.now()}`;
           
-          // Create image element using DOM (not innerHTML)
           const img = document.createElement('img');
           img.src = previewUrl;
           img.alt = `Converted ${format.toUpperCase()}`;
-          
-          // Apply styles directly
-          img.style.display = 'block';
-          img.style.margin = '0 auto';
-          img.style.maxWidth = '100%';
-          img.style.height = 'auto';
-          img.style.minWidth = '100px';
-          img.style.minHeight = '100px';
-          img.style.visibility = 'visible';
-          img.style.opacity = '1';
-          img.style.position = 'relative';
-          img.style.zIndex = '100';
-          img.style.border = '3px solid lime'; // DEBUG
-          
-          img.onload = function() {
-            console.log('✅ IMAGE LOADED AND VISIBLE');
-            console.log('Natural dimensions:', this.naturalWidth, 'x', this.naturalHeight);
-            console.log('Rendered dimensions:', this.width, 'x', this.height);
-            console.log('Display:', window.getComputedStyle(this).display);
-            console.log('Visibility:', window.getComputedStyle(this).visibility);
-            console.log('Opacity:', window.getComputedStyle(this).opacity);
-            console.log('Position:', window.getComputedStyle(this).position);
-          };
+          img.style.cssText = `
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+            margin: 0 auto;
+            object-fit: contain;
+          `;
           
           img.onerror = function() {
-            console.error('❌ IMAGE LOAD FAILED');
-            preview.innerHTML = '<div style="color:#888;padding:2rem;text-align:center;"><p style="font-size:1.2rem;">✓ Conversion Complete</p><p style="font-size:0.875rem;margin-top:0.5rem;">Preview not available - use Download button below</p></div>';
+            convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
           };
           
-          // Append to preview
-          preview.appendChild(img);
-          console.log('✅ Image element appended to preview');
-          
-        } else {
-          console.error('❌ Preview element #svga-preview NOT FOUND!');
+          convertedCanvas.appendChild(img);
         }
-        if (jsonViewer) jsonViewer.style.display = 'none';
+        
+        // Show file details (same as Source Preview)
+        if (convertedDetails) {
+          convertedDetails.innerHTML = `
+            <span>${data.filename}</span>
+            <span>${data.sizeMB} MB</span>
+          `;
+        }
       }
 
       // Download button
