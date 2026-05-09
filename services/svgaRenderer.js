@@ -37,7 +37,14 @@ function toNodeBuffer(data) {
  */
 async function renderFrame(frameData, width, height) {
   const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', {
+    alpha: true,
+    premultipliedAlpha: false
+  });
+
+  // High quality rendering settings
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
 
   // Clear canvas with transparency
   ctx.clearRect(0, 0, width, height);

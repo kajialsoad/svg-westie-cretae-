@@ -70,7 +70,7 @@ function setFile(module, file) {
   const zoneId = module === 'svga-webp' ? 'svga-upload-zone' : 'video-upload-zone';
   const newBtnId = module === 'svga-webp' ? 'svga-new-btn' : 'video-new-btn';
   const convertWrapperId = module === 'svga-webp' ? 'svga-convert-wrapper' : 'video-convert-wrapper';
-  
+
   const zone = document.getElementById(zoneId);
   const newBtn = document.getElementById(newBtnId);
 
@@ -84,13 +84,20 @@ function setFile(module, file) {
     <p class="upload-hint">${(file.size / (1024 * 1024)).toFixed(2)} MB</p>
     <button class="remove-file-btn" onclick="event.stopPropagation(); resetModule('${module}')">Remove</button>
   `;
-  
+
   if (newBtn) newBtn.style.display = 'block';
-  
+
   if (convertWrapperId) {
     document.getElementById(convertWrapperId).style.display = 'block';
   }
-  
+
+  if (module === 'video-svga') {
+    const audioSelector = document.getElementById('video-audio-selector');
+    if (audioSelector) audioSelector.style.display = 'block';
+    const bgSelector = document.getElementById('video-bg-selector');
+    if (bgSelector) bgSelector.style.display = 'block';
+  }
+
   // Show preview
   if (module === 'svga-webp') {
     showSVGAPreview(file);
@@ -104,7 +111,7 @@ function showVideoPreview(file) {
   const fileNameEl = document.getElementById('video-file-name');
   const fileSizeEl = document.getElementById('video-file-size');
   const playerCanvas = document.getElementById('video-player-canvas');
-  
+
   previewBox.style.display = 'block';
   fileNameEl.textContent = file.name;
   fileSizeEl.textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
@@ -137,8 +144,15 @@ function resetModule(module) {
   const convertWrapper = document.getElementById(`${prefix}-convert-wrapper`);
 
   zone.classList.remove('has-file');
+  if (module === 'video-svga') {
+    const audioSelector = document.getElementById('video-audio-selector');
+    if (audioSelector) audioSelector.style.display = 'none';
+    const bgSelector = document.getElementById('video-bg-selector');
+    if (bgSelector) bgSelector.style.display = 'none';
+  }
+
   const content = zone.querySelector('.upload-content');
-  
+
   if (module === 'svga-webp') {
     content.innerHTML = `
       <div class="upload-icon">
@@ -169,7 +183,7 @@ function resetModule(module) {
   if (newBtn) newBtn.style.display = 'none';
   result.style.display = 'none';
   if (convertWrapper) convertWrapper.style.display = 'none';
-  
+
   if (module === 'svga-webp') {
     const previewBox = document.getElementById('svga-upload-preview');
     if (previewBox) previewBox.style.display = 'none';
@@ -178,7 +192,7 @@ function resetModule(module) {
     const previewBox = document.getElementById('video-upload-preview');
     if (previewBox) previewBox.style.display = 'none';
   }
-  
+
   showToast('Reset complete', 'info');
 }
 
@@ -196,22 +210,44 @@ document.addEventListener('click', (e) => {
     }
   }
 
-  const fmtOpt = e.target.closest('.format-option');
-  if (fmtOpt) {
-    const group = fmtOpt.closest('.format-options');
-    if (group) {
-      group.querySelectorAll('.format-option').forEach(o => o.classList.remove('selected'));
-      fmtOpt.classList.add('selected');
-      const radio = fmtOpt.querySelector('input[type="radio"]');
-      if (radio) {
-        radio.checked = true;
-        // Don't auto-trigger, user will click Convert button
+  const toggleBtn = e.target.closest('.toggle-btn');
+  if (toggleBtn) {
+    const group = toggleBtn.closest('.toggle-group');
+    group.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('selected'));
+    toggleBtn.classList.add('selected');
+    const radio = toggleBtn.querySelector('input[type="radio"]');
+    if (radio) {
+      radio.checked = true;
+      const options = document.getElementById('bg-removal-options');
+      if (options) {
+        options.style.display = radio.value === 'yes' ? 'block' : 'none';
       }
-    } else {
-      // PNG Editor format options
-      fmtOpt.closest('.export-format').querySelectorAll('.format-option').forEach(o => o.classList.remove('selected'));
-      fmtOpt.classList.add('selected');
     }
+  }
+
+  const bgOpt = e.target.closest('.bg-option');
+  if (bgOpt) {
+    const group = bgOpt.closest('.bg-options');
+    group.querySelectorAll('.bg-option').forEach(o => o.classList.remove('selected'));
+    bgOpt.classList.add('selected');
+    const radio = bgOpt.querySelector('input[type="radio"]');
+    if (radio) {
+      radio.checked = true;
+      const refinement = document.getElementById('bg-refinement-options');
+      if (refinement) {
+        refinement.style.display = radio.value === 'auto' ? 'none' : 'block';
+      }
+    }
+  }
+});
+
+// Range input listeners
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'input-similarity') {
+    document.getElementById('val-similarity').textContent = parseFloat(e.target.value).toFixed(2);
+  }
+  if (e.target.id === 'input-blend') {
+    document.getElementById('val-blend').textContent = parseFloat(e.target.value).toFixed(2);
   }
 });
 
@@ -243,7 +279,7 @@ async function startConversion(module) {
 
   try {
     console.log('Starting conversion:', { module, file: file.name, sizeTier });
-    
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('sizeTier', sizeTier);
@@ -256,8 +292,27 @@ async function startConversion(module) {
     }
 
     if (module === 'video-svga') {
-      formData.append('bgColor', 'none');
-      formData.append('similarity', '0.3');
+      const toggleRadio = document.querySelector('input[name="video-bg-toggle"]:checked');
+      const isRemoving = toggleRadio ? toggleRadio.value === 'yes' : false;
+      
+      formData.append('removeBg', isRemoving);
+      
+      if (isRemoving) {
+        const bgRadio = document.querySelector('input[name="video-bg"]:checked');
+        const bgColor = bgRadio ? bgRadio.value : 'auto';
+        formData.append('bgColor', bgColor);
+        
+        const similarity = document.getElementById('input-similarity').value;
+        const blend = document.getElementById('input-blend').value;
+        formData.append('similarity', similarity);
+        formData.append('blend', blend);
+      } else {
+        formData.append('bgColor', 'none');
+      }
+
+      const includeAudio = document.getElementById('video-include-audio').checked;
+      formData.append('includeAudio', includeAudio);
+      console.log('Video options:', { isRemoving, includeAudio });
     }
 
     progressBar.style.width = '30%';
@@ -265,20 +320,20 @@ async function startConversion(module) {
 
     const endpoint = module === 'svga-webp' ? '/api/convert/svga' : '/api/convert/video-svga';
     console.log('Sending request to:', endpoint);
-    
+
     const res = await fetch(endpoint, { method: 'POST', body: formData });
-    
+
     console.log('Response status:', res.status);
-    
+
     if (!res.ok) {
       const errData = await res.json().catch(() => ({ error: 'Server error' }));
       console.error('Conversion error:', errData);
       throw new Error(errData.error || 'Conversion failed');
     }
-    
+
     const data = await res.json();
     console.log('Conversion response:', data);
-    
+
     if (!data.success) throw new Error(data.error || 'Conversion failed');
 
     progressBar.style.width = '100%';
@@ -289,9 +344,9 @@ async function startConversion(module) {
       progressSection.style.display = 'none';
       resultContent.style.display = 'block';
       if (statusEl) statusEl.style.display = 'none';
-      
+
       console.log('📍 Result section now visible');
-      
+
       // Scroll to result - AFTER a small delay to ensure rendering
       setTimeout(() => {
         resultArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -318,7 +373,7 @@ async function startConversion(module) {
       if (module === 'svga-webp' && format === 'json') {
         if (convertedPreviewBox) convertedPreviewBox.style.display = 'none';
         if (jsonViewer) jsonViewer.style.display = 'block';
-        
+
         // Fetch the actual JSON to display it
         try {
           const jsonRes = await fetch(`/api/download/${data.jobId}`);
@@ -330,13 +385,13 @@ async function startConversion(module) {
       } else if (module === 'svga-webp') {
         if (convertedPreviewBox) convertedPreviewBox.style.display = 'block';
         if (jsonViewer) jsonViewer.style.display = 'none';
-        
+
         // Render image in player-canvas (same as Source Preview)
         if (convertedCanvas) {
           convertedCanvas.innerHTML = '';
-          
+
           const previewUrl = `/api/download/${data.jobId}?preview=1&t=${Date.now()}`;
-          
+
           const img = document.createElement('img');
           img.src = previewUrl;
           img.alt = `Converted ${format.toUpperCase()}`;
@@ -347,14 +402,14 @@ async function startConversion(module) {
             margin: 0 auto;
             object-fit: contain;
           `;
-          
-          img.onerror = function() {
+
+          img.onerror = function () {
             convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
           };
-          
+
           convertedCanvas.appendChild(img);
         }
-        
+
         // Show file details (same as Source Preview)
         if (convertedDetails) {
           convertedDetails.innerHTML = `
@@ -364,28 +419,109 @@ async function startConversion(module) {
         }
       } else if (module === 'video-svga') {
         if (convertedPreviewBox) convertedPreviewBox.style.display = 'block';
-        
+
         if (convertedCanvas) {
           convertedCanvas.innerHTML = '<div style="color:#888;">Loading SVGA Preview...</div>';
-          
+          convertedCanvas.classList.remove('checkerboard-bg', 'opaque-preview');
+
           const previewUrl = `/api/download/${data.jobId}?preview=1&t=${Date.now()}`;
-          
+          const isRemoving = data.removeBg === true;
+
           if (typeof SVGA !== 'undefined') {
             const parser = new SVGA.Parser();
             parser.load(previewUrl, (videoItem) => {
-              convertedCanvas.innerHTML = '';
               const nativeW = videoItem.videoSize.width || 300;
               const nativeH = videoItem.videoSize.height || 300;
-              
-              const canvas = document.createElement('canvas');
-              canvas.width = nativeW;
-              canvas.height = nativeH;
-              // CSS handles the scaling via .player-canvas canvas rule
-              convertedCanvas.appendChild(canvas);
-              
-              const player = new SVGA.Player(canvas);
-              player.setVideoItem(videoItem);
-              player.startAnimation();
+              console.log('[Preview][SVGA][Meta]', {
+                width: nativeW,
+                height: nativeH,
+                fps: videoItem.FPS || 0,
+                removeBg: isRemoving
+              });
+
+              if (isRemoving) {
+                convertedCanvas.classList.add('checkerboard-bg');
+                convertedCanvas.classList.remove('opaque-preview');
+              } else {
+                convertedCanvas.classList.remove('checkerboard-bg');
+                convertedCanvas.classList.add('opaque-preview');
+              }
+
+              const isCanvasVisible = (canvas) => {
+                try {
+                  const ctx = canvas.getContext('2d');
+                  if (!ctx) return false;
+                  const samplePoints = [
+                    [Math.floor(canvas.width * 0.2), Math.floor(canvas.height * 0.2)],
+                    [Math.floor(canvas.width * 0.5), Math.floor(canvas.height * 0.5)],
+                    [Math.floor(canvas.width * 0.8), Math.floor(canvas.height * 0.8)],
+                  ];
+                  for (const [x, y] of samplePoints) {
+                    const p = ctx.getImageData(Math.max(0, x), Math.max(0, y), 1, 1).data;
+                    const rgb = p[0] + p[1] + p[2];
+                    if (rgb > 20 || p[3] > 0) {
+                      return true;
+                    }
+                  }
+                  return false;
+                } catch (e) {
+                  console.warn('[Preview][SVGA] visibility check failed:', e.message);
+                  return true;
+                }
+              };
+
+              const mountPlayer = (alphaEnabled) => {
+                convertedCanvas.innerHTML = '';
+                const canvas = document.createElement('canvas');
+                canvas.width = nativeW;
+                canvas.height = nativeH;
+                const ctx = canvas.getContext('2d', {
+                  alpha: alphaEnabled,
+                  premultipliedAlpha: false,
+                  desynchronized: true
+                });
+                console.log('[Preview][SVGA][Canvas]', {
+                  width: canvas.width,
+                  height: canvas.height,
+                  alphaEnabled,
+                  ctxCreated: !!ctx
+                });
+                if (ctx) {
+                  ctx.imageSmoothingEnabled = true;
+                  ctx.imageSmoothingQuality = 'high';
+                }
+                convertedCanvas.appendChild(canvas);
+
+                const player = new SVGA.Player(canvas);
+                player.clearsAfterStop = false;
+                player.fillMode = 'Forward';
+                if (player.setContentMode) {
+                  player.setContentMode('AspectFit');
+                }
+                player.setVideoItem(videoItem);
+                player.startAnimation();
+                return { canvas, player };
+              };
+
+              let active = mountPlayer(isRemoving ? true : false);
+
+              // NO mode: if strict opaque context renders blank, retry with alpha=true compatibility mode.
+              if (!isRemoving) {
+                setTimeout(() => {
+                  const visible = isCanvasVisible(active.canvas);
+                  console.log('[Preview][SVGA][OpaqueCheck]', { visible });
+                  if (!visible) {
+                    try {
+                      active.player.stopAnimation();
+                    } catch (e) {}
+                    active = mountPlayer(true);
+                    setTimeout(() => {
+                      const visibleAfterFallback = isCanvasVisible(active.canvas);
+                      console.log('[Preview][SVGA][FallbackCheck]', { visibleAfterFallback });
+                    }, 400);
+                  }
+                }, 500);
+              }
             }, (err) => {
               console.error('SVGA load error:', err);
               convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA Preview failed. Please download to view.</div>';
@@ -394,7 +530,7 @@ async function startConversion(module) {
             convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA library not loaded</div>';
           }
         }
-        
+
         if (convertedDetails) {
           convertedDetails.innerHTML = `
             <span>${data.filename}</span>
@@ -460,12 +596,12 @@ function addToHistory(item) {
 function renderHistory() {
   const container = document.getElementById('recent-conversions-section');
   const list = document.getElementById('history-list');
-  
+
   if (state.history.length === 0) {
     container.style.display = 'none';
     return;
   }
-  
+
   container.style.display = 'block';
   list.innerHTML = state.history.map((item, idx) => `
     <div class="history-item">

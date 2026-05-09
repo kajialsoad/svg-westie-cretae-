@@ -36,8 +36,8 @@
       </a>
       <nav class="header-nav">
         <a href="#" onclick="navigateTo('home'); return false;" class="nav-link active" data-page="home">Home</a>
-        <a href="#" onclick="navigateTo('svga-webp'); return false;" class="nav-link"
-          data-page="svga-webp">SVGA Converter</a>
+        <a href="#" onclick="navigateTo('svga-webp'); return false;" class="nav-link" data-page="svga-webp">SVGA
+          Converter</a>
         <a href="#" onclick="navigateTo('video-svga'); return false;" class="nav-link"
           data-page="video-svga">Video→SVGA</a>
         <a href="#" onclick="navigateTo('png-editor'); return false;" class="nav-link" data-page="png-editor">PNG
@@ -162,7 +162,8 @@
       <div class="page-header">
         <div class="header-actions">
           <button class="back-btn" onclick="navigateTo('home')">← Back</button>
-          <button class="new-file-btn" id="svga-new-btn" onclick="resetModule('svga-webp')" style="display:none;">+ New File</button>
+          <button class="new-file-btn" id="svga-new-btn" onclick="resetModule('svga-webp')" style="display:none;">+ New
+            File</button>
         </div>
         <h2 class="page-title">SVGA <span class="gradient-text">Converter</span></h2>
         <p class="page-desc">Upload an SVGA animation file and convert it to WebP, GIF or JSON metadata</p>
@@ -188,7 +189,7 @@
               onchange="handleFileSelect(event, 'svga-webp')">
           </div>
         </div>
-        
+
         <!-- Upload Preview -->
         <div id="svga-upload-preview" class="upload-preview-box" style="display:none;">
           <h3 class="section-title">Source Preview</h3>
@@ -246,6 +247,14 @@
                 <span class="size-label">High Quality</span>
               </div>
             </label>
+            <label class="size-card" data-tier="ultra">
+              <input type="radio" name="svga-size" value="ultra">
+              <div class="size-card-inner">
+                <span class="size-emoji">💎</span>
+                <strong>50 MB</strong>
+                <span class="size-label">Ultra Fidelity</span>
+              </div>
+            </label>
           </div>
         </div>
 
@@ -294,7 +303,8 @@
       <div class="page-header">
         <div class="header-actions">
           <button class="back-btn" onclick="navigateTo('home')">← Back</button>
-          <button class="new-file-btn" id="video-new-btn" onclick="resetModule('video-svga')" style="display:none;">+ New File</button>
+          <button class="new-file-btn" id="video-new-btn" onclick="resetModule('video-svga')" style="display:none;">+
+            New File</button>
         </div>
         <h2 class="page-title">Video <span class="gradient-text">→</span> SVGA</h2>
         <p class="page-desc">Upload a video, remove background, and convert to SVGA animation</p>
@@ -329,6 +339,68 @@
           </div>
         </div>
 
+        <!-- Background Removal Selection -->
+        <div class="bg-selector" id="video-bg-selector" style="display:none;">
+          <div class="selector-header">
+            <h3 class="section-title">Remove Background?</h3>
+            <div class="toggle-group">
+              <label class="toggle-btn selected" data-value="no">
+                <input type="radio" name="video-bg-toggle" value="no" checked>
+                <span>No</span>
+              </label>
+              <label class="toggle-btn" data-value="yes">
+                <input type="radio" name="video-bg-toggle" value="yes">
+                <span>Yes</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="bg-removal-options" style="display:none; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px;">
+            <h4 class="section-subtitle">Select Target Color</h4>
+            <div class="bg-options">
+              <label class="bg-option" data-color="auto">
+                <input type="radio" name="video-bg" value="auto">
+                <div class="bg-card-inner">
+                  <span class="bg-swatch auto">✨</span>
+                  <span>Auto</span>
+                </div>
+              </label>
+              <label class="bg-option" data-color="green">
+                <input type="radio" name="video-bg" value="green">
+                <div class="bg-card-inner">
+                  <span class="bg-swatch green"></span>
+                  <span>Green</span>
+                </div>
+              </label>
+              <label class="bg-option" data-color="black">
+                <input type="radio" name="video-bg" value="black">
+                <div class="bg-card-inner">
+                  <span class="bg-swatch black"></span>
+                  <span>Black</span>
+                </div>
+              </label>
+              <label class="bg-option" data-color="white">
+                <input type="radio" name="video-bg" value="white">
+                <div class="bg-card-inner">
+                  <span class="bg-swatch white"></span>
+                  <span>White</span>
+                </div>
+              </label>
+            </div>
+            
+            <div class="bg-refinement" id="bg-refinement-options" style="display:none;">
+              <div class="range-group">
+                <label>Similarity: <span id="val-similarity">0.25</span></label>
+                <input type="range" id="input-similarity" min="0.01" max="0.5" step="0.01" value="0.25">
+              </div>
+              <div class="range-group">
+                <label>Blend: <span id="val-blend">0.10</span></label>
+                <input type="range" id="input-blend" min="0.01" max="0.5" step="0.01" value="0.10">
+              </div>
+            </div>
+          </div>
+        </div>
+
 
 
         <!-- Size Selection -->
@@ -359,7 +431,25 @@
                 <span class="size-label">High Quality</span>
               </div>
             </label>
+            <label class="size-card" data-tier="ultra">
+              <input type="radio" name="video-size" value="ultra">
+              <div class="size-card-inner">
+                <span class="size-emoji">💎</span>
+                <strong>50 MB</strong>
+                <span class="size-label">Ultra Fidelity</span>
+              </div>
+            </label>
           </div>
+        </div>
+
+        <!-- Audio Selection -->
+        <div class="audio-selector" id="video-audio-selector" style="display:none;">
+          <h3 class="section-title">Audio Settings</h3>
+          <label class="custom-checkbox">
+            <input type="checkbox" id="video-include-audio">
+            <span class="checkmark"></span>
+            Include Original Audio (Experimental)
+          </label>
         </div>
 
         <!-- Convert Button -->
@@ -385,7 +475,7 @@
             <div id="video-converted-canvas" class="player-canvas"></div>
             <div class="file-details" id="video-converted-details"></div>
           </div>
-          
+
           <div class="result-info" id="video-result-info" style="display:none;"></div>
           <button class="download-btn" id="video-download-btn">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">

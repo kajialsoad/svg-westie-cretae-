@@ -115,7 +115,7 @@ function extractFrames(movieData) {
 
   // Get all unique images as buffers
   const imageBuffers = Object.values(images).filter(buf => buf && buf.length > 0);
-  
+
   if (imageBuffers.length === 0) {
     console.warn('No images found in SVGA file');
     return [];
@@ -175,7 +175,7 @@ function getMetadata(movieData) {
 /**
  * Encode frames into an SVGA 2.0 file
  * @param {Array} frames - Array of { imageKey, imageBuffer } PNG frames
- * @param {Object} options - { width, height, fps }
+ * @param {Object} options - { width, height, fps, audioBuffer, audioDuration }
  * @returns {Buffer} - Encoded .svga file buffer
  */
 async function encodeSVGA(frames, options = {}) {
@@ -184,7 +184,15 @@ async function encodeSVGA(frames, options = {}) {
   const width = options.width || 300;
   const height = options.height || 300;
   const fps = options.fps || 24;
+  const opaqueFrames = options.opaqueFrames === true;
   const totalFrames = frames.length;
+  console.log('[SVGA][Encode][Start]', {
+    width,
+    height,
+    fps,
+    totalFrames,
+    opaqueFrames
+  });
 
   // Build images map
   const images = {};
@@ -205,18 +213,16 @@ async function encodeSVGA(frames, options = {}) {
     for (let f = 0; f < totalFrames; f++) {
       if (f === index) {
         // This frame is visible
-        spriteFrames.push({
-          alpha: 1.0,
-          layout: { x: 0, y: 0, width, height },
+        const visibleFrame = {
+          alpha: 1.0, // Keep explicit alpha for player compatibility (fully opaque)
+          layout: { x: 0, y: 0, width: width, height: height },
           transform: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 },
-        });
+        };
+
+        spriteFrames.push(visibleFrame);
       } else {
-        // This frame is hidden
-        spriteFrames.push({
-          alpha: 0.0,
-          layout: { x: 0, y: 0, width, height },
-          transform: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 },
-        });
+        // This frame is hidden - send empty object to save space
+        spriteFrames.push({});
       }
     }
 
@@ -237,7 +243,27 @@ async function encodeSVGA(frames, options = {}) {
     },
     images,
     sprites,
+    audios: [],
   };
+  console.log('[SVGA][Encode][Structure]', {
+    imageCount: Object.keys(images).length,
+    spriteCount: sprites.length,
+    firstSpriteFrameCount: sprites[0]?.frames?.length || 0,
+    firstSpriteFirstFrame: sprites[0]?.frames?.[0] || null
+  });
+
+  // Add audio if provided
+  if (options.audioBuffer && options.audioDuration) {
+    const audioKey = 'audio_track';
+    movieData.images[audioKey] = options.audioBuffer;
+    movieData.audios.push({
+      audioKey: audioKey,
+      startFrame: 0,
+      endFrame: totalFrames,
+      startTime: 0,
+      totalTime: Math.round(options.audioDuration * 1000), // ms
+    });
+  }
 
   // Encode protobuf
   const errMsg = Movie.verify(movieData);

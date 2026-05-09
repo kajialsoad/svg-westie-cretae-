@@ -55,12 +55,13 @@ async function checkFFmpeg() {
  * Extract frames from a video file
  * @param {string} inputPath - Path to video file
  * @param {string} outputDir - Directory to save frames
- * @param {Object} options - { fps, maxWidth }
+ * @param {Object} options - { fps, maxWidth, pixFmt }
  * @returns {Promise<string[]>} - Array of frame file paths
  */
 async function extractFrames(inputPath, outputDir, options = {}) {
   const fps = options.fps || 24;
   const maxWidth = options.maxWidth || 720;
+  const pixFmt = options.pixFmt || 'rgba';
 
   fs.mkdirSync(outputDir, { recursive: true });
 
@@ -70,7 +71,9 @@ async function extractFrames(inputPath, outputDir, options = {}) {
     '-y',
     '-i', inputPath,
     '-vf', `fps=${fps},scale=${maxWidth}:-1:flags=lanczos`,
-    '-pix_fmt', 'rgba',
+    '-sws_flags', 'lanczos+accurate_rnd',
+    '-pix_fmt', pixFmt,
+    '-frame_pts', '1',
     outputPattern,
   ];
 
@@ -106,19 +109,22 @@ async function removeBackground(inputPath, outputPath, options = {}) {
 
   switch (bgColor.toLowerCase()) {
     case 'green':
-      filterStr = `chromakey=#00FF00:${similarity}:${blend},format=rgba`;
+      filterStr = `chromakey=0x00FF00:${similarity}:${blend},format=rgba`;
+      break;
+    case 'blue':
+      filterStr = `chromakey=0x0000FF:${similarity}:${blend},format=rgba`;
       break;
     case 'black':
-      filterStr = `colorkey=#000000:${similarity}:${blend},format=rgba`;
+      filterStr = `colorkey=0x000000:${similarity}:${blend},format=rgba`;
       break;
     case 'white':
-      filterStr = `colorkey=#FFFFFF:${similarity}:${blend},format=rgba`;
+      filterStr = `colorkey=0xFFFFFF:${similarity}:${blend},format=rgba`;
       break;
     case 'auto_detected':
-      filterStr = `colorkey=${options.detectedHex}:${similarity}:${blend},format=rgba`;
+      filterStr = `colorkey=${options.detectedHex.replace('#', '0x')}:${similarity}:${blend},format=rgba`;
       break;
     default:
-      filterStr = `colorkey=#FFFFFF:${similarity}:${blend},format=rgba`;
+      filterStr = `colorkey=0xFFFFFF:${similarity}:${blend},format=rgba`;
       break;
   }
 
@@ -270,9 +276,9 @@ async function framesToWebPSequence(framesDir, prefix, outputPath, options = {})
     '-framerate', String(fps),
     '-i', inputPattern,
     '-vcodec', 'libwebp_anim',
-    '-lossless', '1',
-    '-compression_level', '4',
-    '-quality', '100',
+    '-lossless', '0',
+    '-compression_level', '6',
+    '-quality', String(quality),
     '-loop', String(loop),
     '-an',
     '-pix_fmt', 'rgba',
@@ -346,21 +352,49 @@ async function getVideoInfo(inputPath) {
       try {
         const info = JSON.parse(stdout);
         const videoStream = (info.streams || []).find(s => s.codec_type === 'video') || {};
+        const audioStream = (info.streams || []).find(s => s.codec_type === 'audio');
         resolve({
           duration: parseFloat(info.format?.duration || 0),
           width: parseInt(videoStream.width || 0),
           height: parseInt(videoStream.height || 0),
           fps: eval(videoStream.r_frame_rate || '24') || 24,
+          hasAudio: !!audioStream,
         });
       } catch {
-        resolve({ duration: 10, width: 720, height: 720, fps: 24 });
+        resolve({ duration: 10, width: 720, height: 720, fps: 24, hasAudio: false });
       }
     });
 
     proc.on('error', () => {
-      resolve({ duration: 10, width: 720, height: 720, fps: 24 });
+      resolve({ duration: 10, width: 720, height: 720, fps: 24, hasAudio: false });
     });
   });
+}
+
+/**
+ * Extract audio from a video file as MP3
+ * @param {string} inputPath - Path to video file
+ * @param {string} outputPath - Path to save MP3
+ * @returns {Promise<boolean>} - Success or failure
+ */
+async function extractAudio(inputPath, outputPath) {
+  const args = [
+    '-y',
+    '-i', inputPath,
+    '-vn', // No video
+    '-acodec', 'libmp3lame',
+    '-ab', '128k',
+    '-ar', '44100',
+    outputPath,
+  ];
+
+  try {
+    await runFFmpeg(args);
+    return true;
+  } catch (e) {
+    console.warn('Audio extraction failed:', e.message);
+    return false;
+  }
 }
 
 /**
@@ -396,6 +430,7 @@ module.exports = {
   framesToWebPSequence,
   framesToGIF,
   getVideoInfo,
+  extractAudio,
   createTempDir,
   cleanupTempDir,
 };

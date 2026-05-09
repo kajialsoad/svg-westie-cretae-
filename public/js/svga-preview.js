@@ -97,11 +97,13 @@ function showSVGAPreview(file) {
       image-rendering:auto;
     `;
     
+    container.classList.add('checkerboard-bg');
     container.appendChild(canvas);
     
     // Context - PRODUCTION settings
     const ctx = canvas.getContext('2d', {
       alpha: true,
+      premultipliedAlpha: false,
       desynchronized: true,  // CRITICAL: Low-latency
       willReadFrequently: false
     });

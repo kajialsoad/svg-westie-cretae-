@@ -12,24 +12,33 @@ const SIZE_TIERS = {
     maxSizeMB: 5,
     maxSizeBytes: 5 * 1024 * 1024,
     resolution: 480,
-    fpsRange: [10, 20],
-    quality: 70,
+    fpsRange: [15, 30],
+    quality: 60,
   },
   standard: {
     label: 'Standard',
     maxSizeMB: 10,
     maxSizeBytes: 10 * 1024 * 1024,
     resolution: 720,
-    fpsRange: [15, 24],
-    quality: 85,
+    fpsRange: [20, 30],
+    quality: 70,
   },
   high: {
     label: 'High Quality',
     maxSizeMB: 15,
     maxSizeBytes: 15 * 1024 * 1024,
     resolution: 1080,
-    fpsRange: [20, 30],
-    quality: 95,
+    fpsRange: [24, 60],
+    quality: 85,
+  },
+  ultra: {
+    label: 'Ultra Fidelity',
+    maxSizeMB: 50,
+    maxSizeBytes: 50 * 1024 * 1024,
+    resolution: 1920,
+    fpsRange: [1, 120],
+    quality: 100,
+    lossless: true
   },
 };
 
@@ -66,6 +75,8 @@ function calculateFPS(tier, originalFps) {
   const settings = getTierSettings(tier);
   const [minFps, maxFps] = settings.fpsRange;
 
+  if (tier === 'ultra') return originalFps;
+
   // Cap to tier's max FPS
   let fps = Math.min(originalFps, maxFps);
   // Ensure minimum
@@ -75,7 +86,7 @@ function calculateFPS(tier, originalFps) {
 }
 
 /**
- * Calculate optimal resolution for a given tier
+ * Calculate optimal resolution for a given tier while preserving aspect ratio
  * @param {string} tier - Size tier
  * @param {number} originalWidth - Original video width
  * @param {number} originalHeight - Original video height
@@ -86,22 +97,29 @@ function calculateResolution(tier, originalWidth, originalHeight) {
   const maxDim = settings.resolution;
 
   if (originalWidth <= maxDim && originalHeight <= maxDim) {
-    return { width: originalWidth, height: originalHeight };
+    // Return even numbers for compatibility
+    return { 
+      width: originalWidth % 2 === 0 ? originalWidth : originalWidth - 1, 
+      height: originalHeight % 2 === 0 ? originalHeight : originalHeight - 1 
+    };
   }
 
   const aspect = originalWidth / originalHeight;
+  let targetWidth, targetHeight;
 
-  if (originalWidth > originalHeight) {
-    return {
-      width: maxDim,
-      height: Math.round(maxDim / aspect),
-    };
+  if (originalWidth >= originalHeight) {
+    targetWidth = maxDim;
+    targetHeight = Math.round(maxDim / aspect);
   } else {
-    return {
-      width: Math.round(maxDim * aspect),
-      height: maxDim,
-    };
+    targetHeight = maxDim;
+    targetWidth = Math.round(maxDim * aspect);
   }
+
+  // Ensure dimensions are even for FFmpeg and Sharp encoders
+  return {
+    width: targetWidth % 2 === 0 ? targetWidth : targetWidth - 1,
+    height: targetHeight % 2 === 0 ? targetHeight : targetHeight - 1,
+  };
 }
 
 /**
@@ -127,14 +145,17 @@ function checkSizeRequirement(filePath, tier) {
 /**
  * Get all compression parameters for a conversion job
  * @param {string} tier - Size tier
- * @param {Object} videoInfo - { duration, width, height, fps }
+ * @param {number} width - Video width
+ * @param {number} height - Video height
+ * @param {number} duration - Video duration in sec
+ * @param {number} originalFps - Video original FPS
  * @returns {Object} - Full compression settings
  */
-function getCompressionParams(tier, videoInfo) {
+function getCompressionParams(tier, width, height, duration, originalFps) {
   const settings = getTierSettings(tier);
-  const fps = calculateFPS(tier, videoInfo.fps);
-  const resolution = calculateResolution(tier, videoInfo.width, videoInfo.height);
-  const bitrate = calculateBitrate(settings.maxSizeMB * 0.8, videoInfo.duration); // 80% target for safety
+  const fps = calculateFPS(tier, originalFps || 24);
+  const resolution = calculateResolution(tier, width, height);
+  const bitrate = calculateBitrate(settings.maxSizeMB * 0.8, duration || 1);
 
   return {
     tier,
