@@ -582,19 +582,46 @@ async function startConversion(module) {
         }
       }
 
-      // Download button
+      // Download button — pre-fetch file as Blob so download works
+      // even if Railway server restarts and loses the in-memory job.
       const dlBtn = document.getElementById(`${prefix}-download-btn`);
       if (dlBtn) {
-        dlBtn.onclick = () => {
-          console.log('Download button clicked:', { jobId: data.jobId, filename: data.filename });
-          const a = document.createElement('a');
-          a.href = `/api/download/${data.jobId}`;
-          a.download = data.filename;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          showToast('Download started!', 'success');
-        };
+        dlBtn.disabled = true;
+        dlBtn.textContent = 'Preparing...';
+
+        (async () => {
+          try {
+            const dlRes = await fetch(`/api/download/${data.jobId}`, { cache: 'no-store' });
+            if (!dlRes.ok) throw new Error(`HTTP ${dlRes.status}`);
+            const dlBlob = await dlRes.blob();
+            const blobUrl = URL.createObjectURL(dlBlob);
+
+            dlBtn.disabled = false;
+            dlBtn.textContent = '⬇ Download SVGA';
+            dlBtn.onclick = () => {
+              const a = document.createElement('a');
+              a.href = blobUrl;
+              a.download = data.filename;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              showToast('Download started!', 'success');
+            };
+          } catch (err) {
+            console.error('Pre-fetch failed, using direct URL:', err);
+            dlBtn.disabled = false;
+            dlBtn.textContent = '⬇ Download SVGA';
+            dlBtn.onclick = () => {
+              const a = document.createElement('a');
+              a.href = `/api/download/${data.jobId}`;
+              a.download = data.filename;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              showToast('Download started!', 'success');
+            };
+          }
+        })();
       } else {
         console.error('Download button not found:', `${prefix}-download-btn`);
       }
