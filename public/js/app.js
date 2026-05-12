@@ -10,6 +10,40 @@ const state = {
   history: JSON.parse(localStorage.getItem('animsuite_history') || '[]'),
 };
 
+let svgaLibLoadingPromise = null;
+async function ensureSVGALibraryLoaded() {
+  if (typeof SVGA !== 'undefined') return true;
+  if (svgaLibLoadingPromise) return svgaLibLoadingPromise;
+
+  const sources = [
+    '/js/vendor/svga.min.js',
+    'https://cdn.jsdelivr.net/npm/svgaplayerweb@2.3.1/build/svga.min.js',
+    'https://unpkg.com/svgaplayerweb@2.3.1/build/svga.min.js'
+  ];
+
+  svgaLibLoadingPromise = (async () => {
+    for (const src of sources) {
+      try {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = src;
+          s.async = true;
+          s.onload = resolve;
+          s.onerror = reject;
+          document.head.appendChild(s);
+        });
+        if (typeof SVGA !== 'undefined') {
+          return true;
+        }
+      } catch (e) { }
+    }
+    return false;
+  })();
+
+  return svgaLibLoadingPromise;
+}
+window.ensureSVGALibraryLoaded = ensureSVGALibraryLoaded;
+
 // ===== NAVIGATION =====
 function navigateTo(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -233,21 +267,7 @@ document.addEventListener('click', (e) => {
     const radio = bgOpt.querySelector('input[type="radio"]');
     if (radio) {
       radio.checked = true;
-      const refinement = document.getElementById('bg-refinement-options');
-      if (refinement) {
-        refinement.style.display = radio.value === 'auto' ? 'none' : 'block';
-      }
     }
-  }
-});
-
-// Range input listeners
-document.addEventListener('input', (e) => {
-  if (e.target.id === 'input-similarity') {
-    document.getElementById('val-similarity').textContent = parseFloat(e.target.value).toFixed(2);
-  }
-  if (e.target.id === 'input-blend') {
-    document.getElementById('val-blend').textContent = parseFloat(e.target.value).toFixed(2);
   }
 });
 
@@ -299,13 +319,8 @@ async function startConversion(module) {
       
       if (isRemoving) {
         const bgRadio = document.querySelector('input[name="video-bg"]:checked');
-        const bgColor = bgRadio ? bgRadio.value : 'auto';
+        const bgColor = bgRadio ? bgRadio.value : 'white';
         formData.append('bgColor', bgColor);
-        
-        const similarity = document.getElementById('input-similarity').value;
-        const blend = document.getElementById('input-blend').value;
-        formData.append('similarity', similarity);
-        formData.append('blend', blend);
       } else {
         formData.append('bgColor', 'none');
       }
@@ -424,12 +439,33 @@ async function startConversion(module) {
           convertedCanvas.innerHTML = '<div style="color:#888;">Loading SVGA Preview...</div>';
           convertedCanvas.classList.remove('checkerboard-bg', 'opaque-preview');
 
-          const previewUrl = `/api/download/${data.jobId}?preview=1&t=${Date.now()}`;
           const isRemoving = data.removeBg === true;
 
-          if (typeof SVGA !== 'undefined') {
+          const svgaReady = await ensureSVGALibraryLoaded();
+          if (svgaReady && typeof SVGA !== 'undefined') {
             const parser = new SVGA.Parser();
-            parser.load(previewUrl, (videoItem) => {
+            const previewEndpoint = `/api/download/${data.jobId}?preview=1&t=${Date.now()}`;
+
+            let previewObjectUrl = null;
+            try {
+              const previewRes = await fetch(previewEndpoint, { cache: 'no-store' });
+              console.log('[Preview][SVGA][Fetch]', {
+                status: previewRes.status,
+                ok: previewRes.ok,
+                contentType: previewRes.headers.get('content-type')
+              });
+              if (!previewRes.ok) {
+                throw new Error(`Preview download failed: HTTP ${previewRes.status}`);
+              }
+              const previewBlob = await previewRes.blob();
+              previewObjectUrl = URL.createObjectURL(previewBlob);
+            } catch (fetchErr) {
+              console.error('[Preview][SVGA][FetchError]', fetchErr);
+              convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview fetch failed. Please retry or download file.</div>';
+              return;
+            }
+
+            parser.load(previewObjectUrl, (videoItem) => {
               const nativeW = videoItem.videoSize.width || 300;
               const nativeH = videoItem.videoSize.height || 300;
               console.log('[Preview][SVGA][Meta]', {
@@ -522,9 +558,16 @@ async function startConversion(module) {
                   }
                 }, 500);
               }
+
+              if (previewObjectUrl) {
+                URL.revokeObjectURL(previewObjectUrl);
+              }
             }, (err) => {
               console.error('SVGA load error:', err);
               convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA Preview failed. Please download to view.</div>';
+              if (previewObjectUrl) {
+                URL.revokeObjectURL(previewObjectUrl);
+              }
             });
           } else {
             convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA library not loaded</div>';

@@ -6,6 +6,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const pako = require('pako');
 const protobuf = require('protobufjs');
 
@@ -185,52 +186,119 @@ async function encodeSVGA(frames, options = {}) {
   const height = options.height || 300;
   const fps = options.fps || 24;
   const opaqueFrames = options.opaqueFrames === true;
+  const timelineMode = options.timelineMode === 'cumulative' ? 'cumulative' : 'frame';
   const totalFrames = frames.length;
   console.log('[SVGA][Encode][Start]', {
     width,
     height,
     fps,
     totalFrames,
-    opaqueFrames
+    opaqueFrames,
+    timelineMode
   });
 
   // Build images map
   const images = {};
+  const frameImageKeys = [];
+  const dedupBufferToKey = new Map();
   frames.forEach((frame, index) => {
-    const key = `frame_${index}`;
-    images[key] = frame.imageBuffer;
-  });
-
-  // Build sprites - one sprite per frame with simple display
-  const sprites = [];
-
-  // Create a single sprite that cycles through all frames
-  // Each frame shows the corresponding image
-  frames.forEach((frame, index) => {
-    const key = `frame_${index}`;
-    const spriteFrames = [];
-
-    for (let f = 0; f < totalFrames; f++) {
-      if (f === index) {
-        // This frame is visible
-        const visibleFrame = {
-          alpha: 1.0, // Keep explicit alpha for player compatibility (fully opaque)
-          layout: { x: 0, y: 0, width: width, height: height },
-          transform: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 },
-        };
-
-        spriteFrames.push(visibleFrame);
-      } else {
-        // This frame is hidden - send empty object to save space
-        spriteFrames.push({});
-      }
+    const raw = frame.imageBuffer;
+    const fingerprint = Buffer.isBuffer(raw)
+      ? crypto.createHash('sha1').update(raw).digest('hex')
+      : String(index);
+    let key = dedupBufferToKey.get(fingerprint);
+    if (!key) {
+      key = `frame_${dedupBufferToKey.size}`;
+      dedupBufferToKey.set(fingerprint, key);
+      images[key] = raw;
     }
-
-    sprites.push({
-      imageKey: key,
-      frames: spriteFrames,
-    });
+    frameImageKeys[index] = key;
   });
+
+  const toVisibleFrame = (frame) => {
+    const layout = frame.layout || { x: 0, y: 0, width, height };
+    const transform = frame.transform || { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
+    return {
+      alpha: frame.alpha ?? 1.0,
+      layout: {
+        x: layout.x || 0,
+        y: layout.y || 0,
+        width: layout.width || width,
+        height: layout.height || height,
+      },
+      transform: {
+        a: transform.a ?? 1,
+        b: transform.b ?? 0,
+        c: transform.c ?? 0,
+        d: transform.d ?? 1,
+        tx: transform.tx ?? 0,
+        ty: transform.ty ?? 0,
+      },
+    };
+  };
+
+  // Build sprites with a layer timeline model.
+  const sprites = [];
+  if (timelineMode === 'cumulative') {
+    // Delta-layer mode: every patch sprite persists from its start frame onward.
+    frames.forEach((frame, index) => {
+      const key = frameImageKeys[index];
+      const spriteFrames = [];
+      const visibleFrame = toVisibleFrame(frame);
+      for (let f = 0; f < totalFrames; f++) {
+        spriteFrames.push(f >= index ? visibleFrame : {});
+      }
+      sprites.push({
+        imageKey: key,
+        frames: spriteFrames,
+      });
+    });
+  } else {
+    // Frame mode with sprite/layer reuse by identical visual state.
+    const stateToLayer = new Map();
+    frames.forEach((frame, index) => {
+      const key = frameImageKeys[index];
+      const layout = frame.layout || { x: 0, y: 0, width, height };
+      const transform = frame.transform || { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
+      const alpha = frame.alpha ?? 1.0;
+      const stateKey = [
+        key,
+        layout.x || 0,
+        layout.y || 0,
+        layout.width || width,
+        layout.height || height,
+        transform.a ?? 1,
+        transform.b ?? 0,
+        transform.c ?? 0,
+        transform.d ?? 1,
+        transform.tx ?? 0,
+        transform.ty ?? 0,
+        alpha
+      ].join('|');
+
+      let layer = stateToLayer.get(stateKey);
+      if (!layer) {
+        layer = {
+          imageKey: key,
+          frameIndexes: [],
+          visibleFrame: toVisibleFrame(frame),
+        };
+        stateToLayer.set(stateKey, layer);
+      }
+      layer.frameIndexes.push(index);
+    });
+
+    for (const layer of stateToLayer.values()) {
+      const spriteFrames = Array.from({ length: totalFrames }, () => ({}));
+      for (const frameIdx of layer.frameIndexes) {
+        spriteFrames[frameIdx] = layer.visibleFrame;
+      }
+      sprites.push({
+        imageKey: layer.imageKey,
+        frames: spriteFrames,
+      });
+    }
+  }
 
   // Create MovieEntity
   const movieData = {
@@ -248,6 +316,8 @@ async function encodeSVGA(frames, options = {}) {
   console.log('[SVGA][Encode][Structure]', {
     imageCount: Object.keys(images).length,
     spriteCount: sprites.length,
+    dedupedImageCount: dedupBufferToKey.size,
+    timelineMode,
     firstSpriteFrameCount: sprites[0]?.frames?.length || 0,
     firstSpriteFirstFrame: sprites[0]?.frames?.[0] || null
   });

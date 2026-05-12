@@ -1,6 +1,6 @@
 /**
  * AnimSuite Pro - Smart Compression Engine
- * Controls output file size (5MB / 10MB / 15MB)
+ * Controls output file size with strict governance.
  */
 
 const fs = require('fs');
@@ -40,6 +40,56 @@ const SIZE_TIERS = {
     quality: 100,
     lossless: true
   },
+};
+
+const VIDEO_OPTIMIZATION_PROFILES = {
+  lite: {
+    staticThreshold: 2.5,
+    lowMotionThreshold: 6.0,
+    staticStride: 5,
+    lowMotionStride: 3,
+    minFps: 10,
+    keepNearLossless: false,
+    png: { palette: true, colors: 128, quality: 72, compressionLevel: 9 },
+    audioBitrateKbps: 64,
+  },
+  standard: {
+    staticThreshold: 2.0,
+    lowMotionThreshold: 5.0,
+    staticStride: 4,
+    lowMotionStride: 2,
+    minFps: 12,
+    keepNearLossless: false,
+    png: { palette: true, colors: 192, quality: 82, compressionLevel: 9 },
+    audioBitrateKbps: 80,
+  },
+  high: {
+    staticThreshold: 1.5,
+    lowMotionThreshold: 4.0,
+    staticStride: 3,
+    lowMotionStride: 2,
+    minFps: 16,
+    keepNearLossless: true,
+    png: { palette: false, colors: 256, quality: 92, compressionLevel: 9 },
+    audioBitrateKbps: 96,
+  },
+  ultra: {
+    staticThreshold: 0.8,
+    lowMotionThreshold: 2.0,
+    staticStride: 1,
+    lowMotionStride: 1,
+    minFps: 24,
+    keepNearLossless: true,
+    png: { palette: false, colors: 256, quality: 100, compressionLevel: 9 },
+    audioBitrateKbps: 128,
+  },
+};
+
+const VIDEO_SVGA_SIZE_POLICY = {
+  minSizeMB: 5,
+  preferredMinMB: 25,
+  preferredMaxMB: 30,
+  hardMaxMB: 50,
 };
 
 /**
@@ -169,6 +219,68 @@ function getCompressionParams(tier, width, height, duration, originalFps) {
   };
 }
 
+function getVideoOptimizationProfile(tier, removeBg) {
+  const base = VIDEO_OPTIMIZATION_PROFILES[tier] || VIDEO_OPTIMIZATION_PROFILES.standard;
+  const profile = JSON.parse(JSON.stringify(base));
+
+  // NO-background mode can keep richer colors while still optimizing size.
+  if (!removeBg && !profile.keepNearLossless) {
+    profile.png.palette = false;
+    profile.png.quality = Math.max(profile.png.quality, 88);
+  }
+
+  return profile;
+}
+
+function getSizeGovernance(tier) {
+  const settings = getTierSettings(tier);
+  const tierMaxMB = settings.maxSizeMB || VIDEO_SVGA_SIZE_POLICY.hardMaxMB;
+  const effectiveMaxMB = Math.min(tierMaxMB, VIDEO_SVGA_SIZE_POLICY.hardMaxMB);
+  const targetMaxMB = Math.min(
+    effectiveMaxMB,
+    Math.max(VIDEO_SVGA_SIZE_POLICY.preferredMaxMB, VIDEO_SVGA_SIZE_POLICY.minSizeMB)
+  );
+
+  return {
+    minBytes: VIDEO_SVGA_SIZE_POLICY.minSizeMB * 1024 * 1024,
+    preferredMinBytes: VIDEO_SVGA_SIZE_POLICY.preferredMinMB * 1024 * 1024,
+    preferredMaxBytes: VIDEO_SVGA_SIZE_POLICY.preferredMaxMB * 1024 * 1024,
+    targetBytes: targetMaxMB * 1024 * 1024,
+    maxBytes: effectiveMaxMB * 1024 * 1024,
+  };
+}
+
+function getRetryPlan(tier, attemptIndex, currentFps, sizeRatio = 1) {
+  const settings = getTierSettings(tier);
+  const cappedAttempt = Math.max(1, Math.min(5, attemptIndex));
+  const keepRatios = [0.92, 0.82, 0.72, 0.6, 0.5];
+  const fpsRatios = [0.94, 0.86, 0.78, 0.7, 0.62];
+  const scaleRatios = [1.0, 0.95, 0.9, 0.85, 0.8];
+  const aggressive = sizeRatio > 1.6;
+  const severe = sizeRatio > 2.2;
+
+  let keepRatio = keepRatios[cappedAttempt - 1];
+  let fpsRatio = fpsRatios[cappedAttempt - 1];
+  let scaleRatio = scaleRatios[cappedAttempt - 1];
+
+  if (aggressive) {
+    keepRatio = Math.max(0.35, keepRatio - 0.08);
+    fpsRatio = Math.max(0.5, fpsRatio - 0.08);
+    scaleRatio = Math.max(0.72, scaleRatio - 0.08);
+  }
+  if (severe) {
+    keepRatio = Math.max(0.3, keepRatio - 0.08);
+    fpsRatio = Math.max(0.45, fpsRatio - 0.08);
+    scaleRatio = Math.max(0.68, scaleRatio - 0.08);
+  }
+
+  return {
+    keepRatio,
+    scaleRatio,
+    targetFps: Math.max(settings.fpsRange[0], Math.round(currentFps * fpsRatio)),
+  };
+}
+
 module.exports = {
   SIZE_TIERS,
   getTierSettings,
@@ -177,4 +289,7 @@ module.exports = {
   calculateResolution,
   checkSizeRequirement,
   getCompressionParams,
+  getVideoOptimizationProfile,
+  getSizeGovernance,
+  getRetryPlan,
 };

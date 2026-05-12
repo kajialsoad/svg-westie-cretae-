@@ -354,15 +354,25 @@
               </label>
             </div>
           </div>
+          <p class="upload-hint" style="margin-top: 8px;">
+            Yes = background removal engine ON, No = keep original video look. Both modes apply size optimization.
+          </p>
 
           <div id="bg-removal-options" style="display:none; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px;">
             <h4 class="section-subtitle">Select Target Color</h4>
             <div class="bg-options">
-              <label class="bg-option" data-color="auto">
-                <input type="radio" name="video-bg" value="auto">
+              <label class="bg-option" data-color="nobackground">
+                <input type="radio" name="video-bg" value="nobackground">
                 <div class="bg-card-inner">
-                  <span class="bg-swatch auto">✨</span>
-                  <span>Auto</span>
+                  <span class="bg-swatch nobackground">🚫</span>
+                  <span>No Background</span>
+                </div>
+              </label>
+              <label class="bg-option selected" data-color="white">
+                <input type="radio" name="video-bg" value="white" checked>
+                <div class="bg-card-inner">
+                  <span class="bg-swatch white"></span>
+                  <span>White</span>
                 </div>
               </label>
               <label class="bg-option" data-color="green">
@@ -379,24 +389,13 @@
                   <span>Black</span>
                 </div>
               </label>
-              <label class="bg-option" data-color="white">
-                <input type="radio" name="video-bg" value="white">
+              <label class="bg-option" data-color="transparent">
+                <input type="radio" name="video-bg" value="transparent">
                 <div class="bg-card-inner">
-                  <span class="bg-swatch white"></span>
-                  <span>White</span>
+                  <span class="bg-swatch transparent"></span>
+                  <span>Transparent</span>
                 </div>
               </label>
-            </div>
-            
-            <div class="bg-refinement" id="bg-refinement-options" style="display:none;">
-              <div class="range-group">
-                <label>Similarity: <span id="val-similarity">0.25</span></label>
-                <input type="range" id="input-similarity" min="0.01" max="0.5" step="0.01" value="0.25">
-              </div>
-              <div class="range-group">
-                <label>Blend: <span id="val-blend">0.10</span></label>
-                <input type="range" id="input-blend" min="0.01" max="0.5" step="0.01" value="0.10">
-              </div>
             </div>
           </div>
         </div>
@@ -406,6 +405,7 @@
         <!-- Size Selection -->
         <div class="size-selector">
           <h3 class="section-title">Output Size</h3>
+          <p class="upload-hint" style="margin-top: 8px;">Policy: minimum 5MB, preferred 25-30MB, hard max 50MB.</p>
           <div class="size-cards">
             <label class="size-card" data-tier="lite">
               <input type="radio" name="video-size" value="lite">

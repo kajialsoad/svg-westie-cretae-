@@ -16,6 +16,10 @@ const svgaRenderer = require('../services/svgaRenderer');
 const ffmpegService = require('../services/ffmpeg');
 const compression = require('../services/compression');
 
+const toFixedSafe = (value, digits = 2, fallback = '0.00') => (
+  Number.isFinite(value) ? value.toFixed(digits) : fallback
+);
+
 // Multer memory storage (no permanent files)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -213,7 +217,7 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
       jobId,
       filename,
       size: outputBuffer.length,
-      sizeMB: (outputBuffer.length / (1024 * 1024)).toFixed(2),
+      sizeMB: toFixedSafe(outputBuffer.length / (1024 * 1024), 2),
       framesProcessed: renderedFrames.length,
       metadata,
     });
@@ -241,16 +245,17 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
 
     const tier = req.body.sizeTier || 'standard';
     const removeBgParam = req.body.removeBg;
-    const removeBg = removeBgParam === 'true' || removeBgParam === true;
-    let bgColor = req.body.bgColor || 'white';
-    // We want 'none' to stay 'none' to bypass background removal
+    const removeBgValue = String(removeBgParam ?? '').toLowerCase();
+    const removeBg = removeBgParam === true || removeBgValue === 'true' || removeBgValue === 'yes' || removeBgValue === '1';
+    const allowedBgColors = new Set(['green', 'black', 'white', 'transparent', 'nobackground']);
+    let bgColor = String(req.body.bgColor || 'white').toLowerCase();
+    if (!allowedBgColors.has(bgColor)) {
+      bgColor = 'white';
+    }
     if (!removeBg) {
       bgColor = 'none';
     }
-
-    const similarity = parseFloat(req.body.similarity) || 0.25;
-    const blend = parseFloat(req.body.blend) || 0.1;
-    const tierSettings = compression.getTierSettings(tier);
+    const sizeGovernance = compression.getSizeGovernance(tier);
 
     jobs.set(jobId, {
       id: jobId,
@@ -272,20 +277,32 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
     }
 
     const compParams = compression.getCompressionParams(tier, videoInfo.width, videoInfo.height, videoInfo.duration, videoInfo.fps);
+    // Keep YES mode quality/compression behavior aligned with NO mode.
+    const optimizationProfile = compression.getVideoOptimizationProfile(tier, false);
     
-    // Original FPS Maintain if removeBg is false
-    if (!removeBg) {
-      compParams.fps = videoInfo.fps;
-    }
+    // Strict frame stability: always lock to source FPS.
+    compParams.fps = videoInfo.fps;
 
     jobs.set(jobId, { ...jobs.get(jobId), step: 'Extracting frames...', progress: 15 });
 
     // Step 2: Extract frames
     const rawFramesDir = path.join(tempDir, 'raw_frames');
     const framePaths = await ffmpegService.extractFrames(inputPath, rawFramesDir, {
-      fps: compParams.fps,
+      fps: videoInfo.fps,
       maxWidth: compParams.width,
-      pixFmt: removeBg ? 'rgba' : 'rgb24'
+      // rgb24 for FFmpeg extraction (most video codecs don't support rgba).
+      // Alpha is added later by sharp.ensureAlpha() in removeBackground(),
+      // so the unified segmentation pipeline still gets consistent RGBA data.
+      pixFmt: 'rgb24',
+    });
+    // Strict frame integrity mode: keep extracted order/timeline unchanged.
+    const selectedRawFramePaths = framePaths.slice();
+    compParams.fps = videoInfo.fps;
+    console.log('[Video->SVGA][TimelineNormalization]', {
+      sourceExtracted: framePaths.length,
+      normalized: selectedRawFramePaths.length,
+      sourceFps: videoInfo.fps,
+      duration: videoInfo.duration,
     });
     if (framePaths.length > 0) {
       const firstRawMeta = await sharp(framePaths[0]).metadata();
@@ -307,11 +324,15 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
 
     // Step 3: Remove background (or copy if 'none')
     const processedDir = path.join(tempDir, 'processed');
-    const processedPaths = await ffmpegService.removeBackgroundBatch(framePaths, processedDir, {
-      bgColor,
-      similarity,
-      blend,
+    const bgProcess = await ffmpegService.removeBackgroundBatch(selectedRawFramePaths, processedDir, {
+      outputBg: bgColor,
+      keyColor: removeBg ? 'auto' : 'none',
     });
+    const processedPaths = bgProcess.processedPaths;
+    const bgReport = bgProcess.report || null;
+    if (bgReport) {
+      console.log('[Video->SVGA][BackgroundReport]', bgReport);
+    }
     if (processedPaths.length > 0) {
       const firstProcessedMeta = await sharp(processedPaths[0]).metadata();
       console.log('[Video->SVGA][Frames][Processed]', {
@@ -328,61 +349,63 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
     jobs.set(jobId, { ...jobs.get(jobId), step: 'Building SVGA animation...', progress: 65 });
 
     // Step 4: Build SVGA from processed frames
-    const frames = [];
     const isUltra = tier === 'ultra';
 
-    for (const framePath of processedPaths) {
-      const buffer = fs.readFileSync(framePath);
-      
-      let sharpObj = sharp(buffer);
-      
-      if (removeBg) {
-        sharpObj = sharpObj.ensureAlpha() // Ensure alpha channel is present
-          .resize(compParams.width, compParams.height, { 
-            fit: 'contain', 
-            background: { r: 0, g: 0, b: 0, alpha: 0 },
-            kernel: isUltra ? sharp.kernel.lanczos3 : sharp.kernel.lanczos2
-          });
-      } else {
-        sharpObj = sharpObj.resize(compParams.width, compParams.height, {
+    const buildEncodedFrames = async (paths, frameOptions = {}, attemptIndex = 0) => {
+      const frameBuffers = [];
+      const profileDrop = attemptIndex * 6;
+      const basePngQuality = Math.max(56, optimizationProfile.png.quality - profileDrop);
+      const frameWidth = frameOptions.width || compParams.width;
+      const frameHeight = frameOptions.height || compParams.height;
+      const sourceCount = paths.length;
+
+      for (let idx = 0; idx < paths.length; idx++) {
+        const framePath = paths[idx];
+        let sharpObj = sharp(framePath);
+
+        sharpObj = sharpObj.resize(frameWidth, frameHeight, {
           fit: 'contain',
           kernel: isUltra ? sharp.kernel.lanczos3 : sharp.kernel.lanczos2
-        });
+        }).toColorspace('srgb');
 
-        // Force an opaque RGB pipeline for fidelity mode.
-        sharpObj = sharpObj
-          .toColorspace('srgb')
-          .removeAlpha();
-      }
+        // ALWAYS ensureAlpha — all modes get consistent RGBA data.
+        // removeAlpha() was stripping precision from processed frames.
+        // The SVGA encoder's opaqueFrames flag handles the semantic distinction.
+        sharpObj = sharpObj.ensureAlpha();
 
-      if (isUltra || !removeBg) {
-        // Ultra Fidelity or No Background Removal: No palette, lossless-like PNG
-        sharpObj = sharpObj.png({ 
-          compressionLevel: 9, 
+        // Match NO mode encoding profile for both YES/NO (content preservation first).
+        const usePalette = false;
+        const encodedPng = await sharpObj.png({
+          compressionLevel: optimizationProfile.png.compressionLevel,
           adaptiveFiltering: true,
-          palette: false, // Use PNG-24/32
-          quality: 100
-        });
-      } else {
-        // Standard/High: Palette-based optimization
-        sharpObj = sharpObj.png({ 
-          compressionLevel: 9, 
-          palette: true, 
-          colors: 256,
-          quality: tier === 'high' ? 90 : 80 
+          palette: usePalette,
+          colors: usePalette ? optimizationProfile.png.colors : undefined,
+          quality: isUltra ? 100 : basePngQuality,
+        }).toBuffer();
+
+        frameBuffers.push({
+          imageBuffer: encodedPng,
+          layout: { x: 0, y: 0, width: frameWidth, height: frameHeight },
+          trimmed: false,
+          delta: false,
+          scene: 'motion',
         });
       }
 
-      const resized = await sharpObj.toBuffer();
-      frames.push({ imageBuffer: resized });
-    }
-    if (frames.length > 0) {
-      console.log('[Video->SVGA][Frames][EncodeInput]', {
-        removeBg,
-        count: frames.length,
-        firstFrameBufferBytes: frames[0].imageBuffer.length
-      });
-    }
+      return {
+        frameBuffers,
+        sourceCount,
+        keptCount: frameBuffers.length,
+        keepRatio: sourceCount > 0 ? frameBuffers.length / sourceCount : 1,
+        duplicateSkips: 0,
+        scene: {
+          staticRatio: 0,
+          glowRatio: 0,
+          motionRatio: 1,
+          counts: { static: 0, motion: sourceCount, glow: 0 },
+        },
+      };
+    };
 
     // Step 5: Optional Audio extraction
     let audioBuffer = null;
@@ -391,20 +414,111 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
     if (includeAudio && videoInfo.hasAudio) {
       jobs.set(jobId, { ...jobs.get(jobId), step: 'Extracting audio...', progress: 85 });
       const audioPath = path.join(tempDir, 'audio.mp3');
-      const audioSuccess = await ffmpegService.extractAudio(inputPath, audioPath);
+      const audioSuccess = await ffmpegService.extractAudio(inputPath, audioPath, {
+        bitrateKbps: optimizationProfile.audioBitrateKbps,
+      });
       if (audioSuccess && fs.existsSync(audioPath)) {
         audioBuffer = fs.readFileSync(audioPath);
       }
     }
+    let activeProcessedPaths = processedPaths;
+    let activeFps = compParams.fps;
+    let activeWidth = compParams.width;
+    let activeHeight = compParams.height;
+    let finalFrames = [];
+    let svgaBuffer = null;
+    const maxAttempts = 5;
 
-    const svgaBuffer = await svgaService.encodeSVGA(frames, {
-      width: compParams.width,
-      height: compParams.height,
-      fps: compParams.fps,
-      opaqueFrames: !removeBg,
-      audioBuffer,
-      audioDuration: videoInfo.duration,
-    });
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const frameBuild = await buildEncodedFrames(activeProcessedPaths, {
+        width: activeWidth,
+        height: activeHeight,
+      }, attempt);
+      finalFrames = frameBuild.frameBuffers;
+      if (finalFrames.length === 0) {
+        throw new Error('No frames available after optimization.');
+      }
+      const encodeFps = activeFps;
+
+      if (finalFrames.length > 0) {
+        console.log('[Video->SVGA][Frames][EncodeInput]', {
+          attempt,
+          removeBg,
+          count: finalFrames.length,
+          fps: encodeFps,
+          width: activeWidth,
+          height: activeHeight,
+          sourceCount: frameBuild.sourceCount,
+          duplicateSkips: frameBuild.duplicateSkips,
+          scene: frameBuild.scene,
+          firstFrameBufferBytes: finalFrames[0].imageBuffer.length
+        });
+      }
+
+      svgaBuffer = await svgaService.encodeSVGA(finalFrames, {
+        width: activeWidth,
+        height: activeHeight,
+        fps: encodeFps,
+        opaqueFrames: !(removeBg && (bgColor === 'transparent' || bgColor === 'nobackground')),
+        timelineMode: 'frame',
+        audioBuffer,
+        audioDuration: videoInfo.duration,
+      });
+
+      const sizeLimit = sizeGovernance.maxBytes || (50 * 1024 * 1024);
+      const sizeRatio = svgaBuffer.length / Math.max(1, sizeGovernance.targetBytes);
+      console.log('[Video->SVGA][SizeCheck]', {
+        attempt,
+        bytes: svgaBuffer.length,
+        limit: sizeLimit,
+        target: sizeGovernance.targetBytes,
+        sizeRatio: Number(toFixedSafe(sizeRatio, 3, '0.000')),
+      });
+
+      if (svgaBuffer.length <= sizeLimit) {
+        activeFps = encodeFps;
+        break;
+      }
+
+      if (attempt === maxAttempts - 1) {
+        throw new Error(`Unable to keep output within 50MB hard limit after ${maxAttempts} optimization passes.`);
+      }
+
+      const retryPlan = compression.getRetryPlan(tier, attempt + 1, activeFps, sizeRatio);
+      // Reduce BOTH resolution AND frame count on retries.
+      // Frame subsampling is essential for long videos (10s @ 24fps = 241 frames)
+      // where resolution reduction alone can't bring size under limit.
+      activeWidth = Math.max(64, Math.floor((activeWidth * retryPlan.scaleRatio) / 2) * 2);
+      activeHeight = Math.max(64, Math.floor((activeHeight * retryPlan.scaleRatio) / 2) * 2);
+
+      // Subsample frames using keepRatio — evenly distributed to preserve animation flow
+      const targetFrameCount = Math.max(2, Math.round(activeProcessedPaths.length * retryPlan.keepRatio));
+      if (targetFrameCount < activeProcessedPaths.length) {
+        const step = (activeProcessedPaths.length - 1) / (targetFrameCount - 1);
+        const subsampled = [];
+        for (let si = 0; si < targetFrameCount; si++) {
+          const idx = Math.min(activeProcessedPaths.length - 1, Math.round(si * step));
+          subsampled.push(activeProcessedPaths[idx]);
+        }
+        activeProcessedPaths = subsampled;
+        // Adjust FPS proportionally to maintain perceived speed
+        activeFps = Math.max(8, Math.round(videoInfo.fps * retryPlan.keepRatio));
+      }
+
+      console.log('[Video->SVGA][RetryPlan]', {
+        attempt: attempt + 1,
+        keepRatio: retryPlan.keepRatio,
+        scaleRatio: retryPlan.scaleRatio,
+        targetFps: activeFps,
+        selectedFrames: activeProcessedPaths.length,
+        width: activeWidth,
+        height: activeHeight,
+      });
+    }
+
+    compParams.fps = activeFps;
+    compParams.width = activeWidth;
+    compParams.height = activeHeight;
 
     jobs.set(jobId, { ...jobs.get(jobId), step: 'Finalizing...', progress: 90 });
 
@@ -418,8 +532,14 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
       result: {
         buffer: svgaBuffer,
         filename,
-        mimetype: 'application/octet-stream',
+        mimetype: 'application/x-svga',
         size: svgaBuffer.length,
+        sizeInfo: {
+          minBytes: sizeGovernance.minBytes,
+          preferredMinBytes: sizeGovernance.preferredMinBytes,
+          preferredMaxBytes: sizeGovernance.preferredMaxBytes,
+          maxBytes: sizeGovernance.maxBytes,
+        },
       },
     });
 
@@ -432,9 +552,17 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
       filename,
       removeBg,
       size: svgaBuffer.length,
-      sizeMB: (svgaBuffer.length / (1024 * 1024)).toFixed(2),
-      framesProcessed: frames.length,
+      sizeMB: toFixedSafe(svgaBuffer.length / (1024 * 1024), 2),
+      framesProcessed: finalFrames.length,
+      sourceFrames: framePaths.length,
+      optimizedFrames: selectedRawFramePaths.length,
+      backgroundReport: bgReport,
       settings: compParams,
+      sizePolicy: {
+        minMB: 5,
+        preferredMB: '25-30',
+        maxMB: 50,
+      },
     });
 
   } catch (err) {
@@ -538,7 +666,7 @@ router.post('/convert/png-animation', upload.array('files', 100), async (req, re
       jobId,
       filename,
       size: outputBuffer.length,
-      sizeMB: (outputBuffer.length / (1024 * 1024)).toFixed(2),
+      sizeMB: toFixedSafe(outputBuffer.length / (1024 * 1024), 2),
     });
 
   } catch (err) {
@@ -567,7 +695,7 @@ router.get('/status/:jobId', (req, res) => {
     result: job.result ? {
       filename: job.result.filename,
       size: job.result.size,
-      sizeMB: (job.result.size / (1024 * 1024)).toFixed(2),
+        sizeMB: toFixedSafe(job.result.size / (1024 * 1024), 2),
       metadata: job.result.metadata,
       sizeInfo: job.result.sizeInfo,
     } : null,
@@ -600,11 +728,12 @@ router.get('/download/:jobId', (req, res) => {
     size: job.result.buffer.length
   });
 
+  const isPreviewRequest = req.query.preview === '1';
   res.setHeader('Content-Type', job.result.mimetype);
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  // Allow inline viewing for images, force download for others
-  if (job.result.mimetype.startsWith('image/') || job.result.mimetype === 'application/json') {
+  // Preview requests should be inline for player compatibility.
+  if (isPreviewRequest || job.result.mimetype.startsWith('image/') || job.result.mimetype === 'application/json') {
     res.setHeader('Content-Disposition', `inline; filename="${job.result.filename}"`);
   } else {
     res.setHeader('Content-Disposition', `attachment; filename="${job.result.filename}"`);

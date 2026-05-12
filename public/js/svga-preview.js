@@ -6,7 +6,7 @@
 let svgaPlayer = null;
 let svgaParser = null;
 
-function showSVGAPreview(file) {
+async function showSVGAPreview(file) {
   const previewBox = document.getElementById('svga-upload-preview');
   const fileNameEl = document.getElementById('svga-file-name');
   const fileSizeEl = document.getElementById('svga-file-size');
@@ -27,7 +27,11 @@ function showSVGAPreview(file) {
     return;
   }
   
-  // Check SVGA library
+  // Check/load SVGA library
+  const loader = window.ensureSVGALibraryLoaded;
+  if (typeof SVGA === 'undefined' && typeof loader === 'function') {
+    await loader();
+  }
   if (typeof SVGA === 'undefined') {
     playerCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA library not loaded</div>';
     URL.revokeObjectURL(url);
