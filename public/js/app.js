@@ -596,6 +596,9 @@ async function startConversion(module) {
             const dlBlob = await dlRes.blob();
             const blobUrl = URL.createObjectURL(dlBlob);
 
+            // Save to IndexedDB for history list
+            await saveFileToDB(data.jobId, dlBlob);
+
             dlBtn.disabled = false;
             dlBtn.textContent = '⬇ Download SVGA';
             dlBtn.onclick = () => {
@@ -656,7 +659,44 @@ function showToast(message, type = 'info') {
   setTimeout(() => toast.remove(), 4000);
 }
 
-// ===== HISTORY MANAGEMENT =====
+// ===== HISTORY MANAGEMENT & INDEXEDDB =====
+const dbPromise = new Promise((resolve, reject) => {
+  const request = indexedDB.open('AnimSuiteDB', 1);
+  request.onupgradeneeded = (e) => {
+    e.target.result.createObjectStore('files');
+  };
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error);
+});
+
+async function saveFileToDB(jobId, blob) {
+  try {
+    const db = await dbPromise;
+    return new Promise((resolve) => {
+      const tx = db.transaction('files', 'readwrite');
+      tx.objectStore('files').put(blob, jobId);
+      tx.oncomplete = () => resolve();
+    });
+  } catch (e) {
+    console.error('Failed to save to IndexedDB', e);
+  }
+}
+
+async function getFileFromDB(jobId) {
+  try {
+    const db = await dbPromise;
+    return new Promise((resolve) => {
+      const tx = db.transaction('files', 'readonly');
+      const req = tx.objectStore('files').get(jobId);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    });
+  } catch (e) {
+    console.error('Failed to get from IndexedDB', e);
+    return null;
+  }
+}
+
 function addToHistory(item) {
   state.history.unshift(item);
   if (state.history.length > 20) state.history.pop();
@@ -687,15 +727,39 @@ function renderHistory() {
   `).join('');
 }
 
-function downloadFromHistory(jobId, filename) {
-  const a = document.createElement('a');
-  a.href = `/api/download/${jobId}`;
-  a.download = filename;
-  a.click();
-  showToast('Download started!', 'success');
+async function downloadFromHistory(jobId, filename) {
+  const blob = await getFileFromDB(jobId);
+  if (blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 100);
+    showToast('Download started!', 'success');
+  } else {
+    // Fallback to server if not in IndexedDB
+    const a = document.createElement('a');
+    a.href = `/api/download/${jobId}`;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast('Download started (Server)', 'info');
+  }
 }
 
 function removeFromHistory(index) {
+  const item = state.history[index];
+  if (item && item.jobId) {
+    dbPromise.then(db => {
+      const tx = db.transaction('files', 'readwrite');
+      tx.objectStore('files').delete(item.jobId);
+    }).catch(e => console.error(e));
+  }
+  
   state.history.splice(index, 1);
   localStorage.setItem('animsuite_history', JSON.stringify(state.history));
   renderHistory();
@@ -705,6 +769,12 @@ function clearHistory() {
   if (confirm('Clear all conversion history?')) {
     state.history = [];
     localStorage.removeItem('animsuite_history');
+    
+    dbPromise.then(db => {
+      const tx = db.transaction('files', 'readwrite');
+      tx.objectStore('files').clear();
+    }).catch(e => console.error(e));
+    
     renderHistory();
   }
 }
