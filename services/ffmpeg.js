@@ -15,13 +15,33 @@ const sharp = require('sharp');
  * @param {Array} args - FFmpeg arguments array
  * @returns {Promise} - Resolves when complete
  */
-function runFFmpeg(args) {
+function runFFmpeg(args, options = {}) {
   return new Promise((resolve, reject) => {
     const proc = spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe'] });
     let stderr = '';
+    let stderrBuffer = '';
 
     proc.stderr.on('data', (data) => {
-      stderr += data.toString();
+      const text = data.toString();
+      stderr += text;
+      stderrBuffer += text;
+
+      const lines = stderrBuffer.split(/\r?\n/);
+      stderrBuffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (typeof options.onLogLine === 'function') {
+          options.onLogLine(line);
+        }
+
+        if (typeof options.onProgress === 'function' && /frame=\s*\d+|time=\S+|speed=\S+/.test(line)) {
+          const frame = line.match(/frame=\s*(\d+)/)?.[1] || null;
+          const fps = line.match(/fps=\s*([\d.]+)/)?.[1] || null;
+          const time = line.match(/time=\s*([0-9:.]+)/)?.[1] || null;
+          const speed = line.match(/speed=\s*([0-9.]+x)/)?.[1] || null;
+          options.onProgress({ frame, fps, time, speed, raw: line.trim() });
+        }
+      }
     });
 
     proc.on('close', (code) => {
@@ -1044,24 +1064,37 @@ async function framesToWebPSequence(framesDir, prefix, outputPath, options = {})
   const fps = options.fps || 24;
   const quality = options.quality || 90;
   const loop = options.loop !== undefined ? options.loop : 0;
+  const compressionLevel = options.compressionLevel || 3;
+  const width = options.width || null;
+  const height = options.height || null;
+  const stripMetadata = options.stripMetadata === true;
 
   const inputPattern = path.join(framesDir, `${prefix}%04d.png`);
+  const videoFilter = width && height
+    ? `scale=${width}:${height}:flags=lanczos:force_original_aspect_ratio=decrease`
+    : null;
 
   const args = [
     '-y',
+    '-threads', '0',
     '-framerate', String(fps),
     '-i', inputPattern,
+    ...(videoFilter ? ['-vf', videoFilter] : []),
     '-vcodec', 'libwebp_anim',
     '-lossless', '0',
-    '-compression_level', '6',
+    '-compression_level', String(compressionLevel),
     '-quality', String(quality),
     '-loop', String(loop),
     '-an',
+    ...(stripMetadata ? ['-map_metadata', '-1'] : []),
     '-pix_fmt', 'rgba',
     outputPath,
   ];
 
-  await runFFmpeg(args);
+  await runFFmpeg(args, {
+    onProgress: options.onProgress,
+    onLogLine: options.onLogLine,
+  });
 }
 
 /**
@@ -1074,6 +1107,8 @@ async function framesToWebPSequence(framesDir, prefix, outputPath, options = {})
 async function framesToGIF(framesDir, prefix, outputPath, options = {}) {
   const fps = options.fps || 15;
   const maxWidth = options.maxWidth || 480;
+  const ditherScale = options.ditherScale || 5;
+  const stripMetadata = options.stripMetadata === true;
 
   const inputPattern = path.join(framesDir, `${prefix}%04d.png`);
   const palettePath = path.join(framesDir, 'palette.png');
@@ -1093,8 +1128,9 @@ async function framesToGIF(framesDir, prefix, outputPath, options = {}) {
     '-framerate', String(fps),
     '-i', inputPattern,
     '-i', palettePath,
-    '-lavfi', `fps=${fps},scale=${maxWidth}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
+    '-lavfi', `fps=${fps},scale=${maxWidth}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=${ditherScale}:diff_mode=rectangle`,
     '-loop', '0',
+    ...(stripMetadata ? ['-map_metadata', '-1'] : []),
     outputPath,
   ]);
 

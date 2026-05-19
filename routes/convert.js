@@ -20,6 +20,28 @@ const toFixedSafe = (value, digits = 2, fallback = '0.00') => (
   Number.isFinite(value) ? value.toFixed(digits) : fallback
 );
 
+const createCompressionSummary = ({ inputSize, outputSize, targetConfig, attempts, oneMbMode }) => {
+  const safeInput = Math.max(1, Number(inputSize) || 1);
+  const safeOutput = Math.max(1, Number(outputSize) || 1);
+  const savedPercent = ((safeInput - safeOutput) / safeInput) * 100;
+
+  return {
+    mode: oneMbMode ? 'one-mb' : 'standard',
+    targetSizeMB: targetConfig.targetSizeMB,
+    targetMet: safeOutput <= targetConfig.toleranceBytes,
+    finalSizeMB: toFixedSafe(safeOutput / (1024 * 1024), 2),
+    inputSizeMB: toFixedSafe(safeInput / (1024 * 1024), 2),
+    compressionRatio: toFixedSafe(safeInput / safeOutput, 2, '1.00'),
+    estimatedRatio: toFixedSafe(
+      compression.estimateCompressionRatio(safeInput, targetConfig.targetBytes),
+      2,
+      '1.00'
+    ),
+    savedPercent: toFixedSafe(savedPercent, 1, '0.0'),
+    attempts,
+  };
+};
+
 // Multer memory storage (no permanent files)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -28,6 +50,7 @@ const upload = multer({
 
 // Job storage (in-memory for localhost)
 const jobs = new Map();
+const cleanupTimers = new Map();
 
 /**
  * POST /api/upload
@@ -63,7 +86,7 @@ router.post('/upload', upload.single('file'), (req, res) => {
 
 /**
  * POST /api/convert/svga
- * Convert SVGA animation to WebP or GIF
+ * Convert SVGA animation to WebP, GIF, JSON, or SVGA
  */
 router.post('/convert/svga', upload.single('file'), async (req, res) => {
   const jobId = uuidv4();
@@ -74,17 +97,21 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
+    const format = req.body.format || 'webp';
+    const tier = req.body.sizeTier || 'standard';
+    const oneMbMode = compression.isOneMbModeEnabled(req.body.oneMbMode);
+    const tierSettings = compression.getTierSettings(tier);
+    const targetConfig = compression.getTargetConfig({ tier, oneMbMode });
+
     console.log('SVGA Conversion started:', {
       jobId,
       filename: req.file.originalname,
       size: req.file.size,
-      format: req.body.format,
-      tier: req.body.sizeTier
+      format,
+      tier,
+      rawOneMbMode: req.body.oneMbMode,
+      oneMbMode,
     });
-
-    const format = req.body.format || 'webp';
-    const tier = req.body.sizeTier || 'standard';
-    const tierSettings = compression.getTierSettings(tier);
 
     // Update job status
     jobs.set(jobId, {
@@ -102,18 +129,54 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
 
     jobs.set(jobId, { ...jobs.get(jobId), step: 'Extracting frames...', progress: 30 });
 
-    // Step 2: Render frames with canvas (proper transforms)
-    console.log('Step 2: Rendering frames with canvas...');
-    const renderedFrames = await svgaRenderer.renderAllFrames(movieData, movieData.images || {});
+    const isSvgaOutput = format === 'svga';
+    const framesDir = path.join(tempDir, 'frames');
+    let renderResult = {
+      totalFrames: metadata.totalFrames || 0,
+      previewBuffer: null,
+    };
 
-    console.log(`Rendered ${renderedFrames.length} frames`);
+    if (isSvgaOutput) {
+      console.log('Step 2: Preparing SVGA preview frame...');
+      renderResult.previewBuffer = await svgaRenderer.renderPreviewFrame(movieData, movieData.images || {}, 0);
+      console.log('Prepared single preview frame for SVGA output');
+      jobs.set(jobId, {
+        ...jobs.get(jobId),
+        step: 'Prepared SVGA preview...',
+        progress: 46,
+      });
+    } else {
+      // Step 2: Render frames to disk to keep memory stable on large SVGA files.
+      console.log('Step 2: Rendering frames to disk...');
+      renderResult = await svgaRenderer.renderFramesToDirectory(movieData, movieData.images || {}, framesDir, {
+        onFrame: ({ frameIndex, totalFrames }) => {
+          if ((frameIndex + 1) === totalFrames || (frameIndex + 1) % 15 === 0) {
+            jobs.set(jobId, {
+              ...jobs.get(jobId),
+              step: `Rendering frames ${frameIndex + 1}/${totalFrames}...`,
+              progress: Math.min(58, 30 + Math.round(((frameIndex + 1) / totalFrames) * 28)),
+            });
+          }
+        },
+      });
 
-    if (renderedFrames.length === 0) {
-      throw new Error('No frames could be rendered from SVGA file. The file may be corrupted or empty.');
+      console.log(`Rendered ${renderResult.totalFrames} frames to disk`);
+
+      if (renderResult.totalFrames === 0) {
+        throw new Error('No frames could be rendered from SVGA file. The file may be corrupted or empty.');
+      }
     }
 
-    // Step 2: Save frames as PNGs (only if not JSON)
+    // Step 3: Encode output
     let outputBuffer, filename, mimetype;
+    let preview = null;
+    let compressionSummary = createCompressionSummary({
+      inputSize: req.file.size,
+      outputSize: req.file.size,
+      targetConfig,
+      attempts: [],
+      oneMbMode,
+    });
 
     if (format === 'json') {
       console.log('Step 3: Creating JSON output...');
@@ -131,59 +194,272 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
         }
       }
 
-      outputBuffer = Buffer.from(JSON.stringify(cleanMovieData, null, 2));
+      outputBuffer = Buffer.from(JSON.stringify(cleanMovieData, null, oneMbMode ? 0 : 2));
       filename = `metadata_${Date.now()}.json`;
       mimetype = 'application/json';
     } else {
       console.log(`Step 3: Converting to ${format.toUpperCase()}...`);
-      const framesDir = path.join(tempDir, 'frames');
-      fs.mkdirSync(framesDir, { recursive: true });
 
-      console.log(`Saving ${renderedFrames.length} rendered frames...`);
-
-      // Save rendered frames as PNGs
-      for (let i = 0; i < renderedFrames.length; i++) {
-        const framePath = path.join(framesDir, `frame_${String(i + 1).padStart(4, '0')}.png`);
-        try {
-          // Resize if needed
-          await sharp(renderedFrames[i].buffer)
+      // Keep a lightweight inline preview so browsers can always show
+      // something even when animated output rendering is inconsistent.
+      try {
+        preview = {
+          buffer: await sharp(renderResult.previewBuffer)
             .resize(tierSettings.resolution, tierSettings.resolution, {
               fit: 'inside',
               withoutEnlargement: true,
               background: { r: 0, g: 0, b: 0, alpha: 0 }
             })
             .png()
-            .toFile(framePath);
-        } catch (err) {
-          console.warn(`Failed to save frame ${i}:`, err.message);
+            .toBuffer(),
+          mimetype: 'image/png',
+          filename: `preview_${Date.now()}.png`,
+        };
+      } catch (previewErr) {
+        console.warn('Failed to generate inline preview:', previewErr.message);
+      }
+
+      if (format === 'svga') {
+        if (!oneMbMode) {
+          jobs.set(jobId, {
+            ...jobs.get(jobId),
+            step: 'Preserving original SVGA animation...',
+            progress: 72
+          });
+
+          outputBuffer = req.file.buffer;
+          filename = `converted_${Date.now()}.svga`;
+          mimetype = 'application/x-svga';
+          compressionSummary = createCompressionSummary({
+            inputSize: req.file.size,
+            outputSize: outputBuffer.length,
+            targetConfig,
+            attempts: [{
+              attempt: 1,
+              sizeMB: toFixedSafe(outputBuffer.length / (1024 * 1024), 2),
+              quality: null,
+              width: metadata.width,
+              height: metadata.height,
+            }],
+            oneMbMode: false,
+          });
+        } else {
+          jobs.set(jobId, {
+            ...jobs.get(jobId),
+            step: 'Smart SVGA compression towards ~1 MB...',
+            progress: 60
+          });
+
+          const attempts = [];
+          const maxAttempts = 3;
+          let bestCandidate = null;
+          let previousCandidate = null;
+
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const plan = compression.getOneMbAttemptPlan(format, attempt, metadata, tier);
+            console.log(`Encoding ${format} attempt ${attempt}/${maxAttempts}...`, plan || {});
+
+            const optimizedMovieData = await svgaService.optimizeMovieDataForOneMb(movieData, plan || {});
+            const candidateBuffer = await svgaService.encodeMovieData(optimizedMovieData, plan || {});
+            const candidate = {
+              attempt,
+              buffer: candidateBuffer,
+              size: candidateBuffer.length,
+              sizeMB: toFixedSafe(candidateBuffer.length / (1024 * 1024), 2),
+              plan,
+            };
+
+            attempts.push({
+              attempt,
+              sizeMB: candidate.sizeMB,
+              quality: plan?.quality ?? null,
+              width: metadata.width,
+              height: metadata.height,
+            });
+
+            if (
+              !bestCandidate ||
+              Math.abs(candidate.size - targetConfig.targetBytes) < Math.abs(bestCandidate.size - targetConfig.targetBytes)
+            ) {
+              bestCandidate = candidate;
+            }
+
+            jobs.set(jobId, {
+              ...jobs.get(jobId),
+              step: `Smart SVGA compression attempt ${attempt}/${maxAttempts} -> ${candidate.sizeMB} MB`,
+              progress: Math.min(88, 60 + Math.round((attempt / maxAttempts) * 28)),
+            });
+
+            if (candidate.size <= targetConfig.toleranceBytes) {
+              break;
+            }
+
+            if (previousCandidate) {
+              const improvementRatio = (previousCandidate.size - candidate.size) / Math.max(1, previousCandidate.size);
+
+              if (attempt >= 2 && candidate.size > targetConfig.targetBytes * 8 && improvementRatio < 0.12) {
+                console.log(`[SVGA->SVGA] Early stop after attempt ${attempt}: size is still far from 1MB and improvement dropped to ${(improvementRatio * 100).toFixed(1)}%`);
+                break;
+              }
+
+              if (attempt >= 3 && improvementRatio < 0.04) {
+                console.log(`[SVGA->SVGA] Early stop after attempt ${attempt}: compression plateau detected (${(improvementRatio * 100).toFixed(1)}% improvement)`);
+                break;
+              }
+            }
+
+            previousCandidate = candidate;
+          }
+
+          if (!bestCandidate) {
+            throw new Error('Unable to optimize SVGA output.');
+          }
+
+          outputBuffer = bestCandidate.buffer;
+          filename = `converted_${Date.now()}.svga`;
+          mimetype = 'application/x-svga';
+          compressionSummary = createCompressionSummary({
+            inputSize: req.file.size,
+            outputSize: outputBuffer.length,
+            targetConfig,
+            attempts,
+            oneMbMode,
+          });
         }
-      }
-
-      console.log(`Saved ${renderedFrames.length} frames`);
-
-      jobs.set(jobId, { ...jobs.get(jobId), step: `Converting to ${format.toUpperCase()}...`, progress: 60 });
-
-      // Step 3: Convert to requested format
-      const outputPath = path.join(tempDir, `output.${format}`);
-      const fps = Math.min(metadata.fps, tierSettings.fpsRange[1]);
-
-      console.log(`Step 3: Creating ${format} with fps=${fps}...`);
-      if (format === 'gif') {
-        await ffmpegService.framesToGIF(framesDir, 'frame_', outputPath, {
-          fps,
-          maxWidth: tierSettings.resolution,
-        });
       } else {
-        await ffmpegService.framesToWebPSequence(framesDir, 'frame_', outputPath, {
-          fps,
-          quality: tierSettings.quality,
+        jobs.set(jobId, {
+          ...jobs.get(jobId),
+          step: oneMbMode
+            ? `Smart ${format.toUpperCase()} compression towards ~1 MB...`
+            : `Converting to ${format.toUpperCase()}...`,
+          progress: 60
+        });
+
+        const attempts = [];
+        const maxAttempts = oneMbMode ? 6 : 1;
+        let bestCandidate = null;
+        let lastEncodeLogAt = 0;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          const outputPath = path.join(tempDir, oneMbMode ? `output_attempt_${attempt}.${format}` : `output.${format}`);
+          const plan = oneMbMode
+            ? compression.getOneMbAttemptPlan(format, attempt, metadata, tier)
+            : null;
+          const fps = oneMbMode ? metadata.fps : Math.min(metadata.fps, tierSettings.fpsRange[1]);
+
+          console.log(`Encoding ${format} attempt ${attempt}/${maxAttempts} with fps=${fps}...`, plan || {});
+
+          if (format === 'gif') {
+            await ffmpegService.framesToGIF(framesDir, 'frame_', outputPath, {
+              fps,
+              maxWidth: plan?.maxWidth || tierSettings.resolution,
+              ditherScale: plan?.ditherScale || 5,
+              stripMetadata: plan?.stripMetadata || false,
+            });
+          } else {
+            await ffmpegService.framesToWebPSequence(framesDir, 'frame_', outputPath, {
+              fps,
+              quality: plan?.quality || tierSettings.quality,
+              compressionLevel: plan?.compressionLevel || (oneMbMode ? 4 : 3),
+              width: plan?.width || null,
+              height: plan?.height || null,
+              stripMetadata: plan?.stripMetadata || false,
+              onProgress: (progressInfo) => {
+                const now = Date.now();
+                if (now - lastEncodeLogAt < 1200) return;
+                lastEncodeLogAt = now;
+
+                const details = [
+                  progressInfo.frame ? `frame ${progressInfo.frame}` : null,
+                  progressInfo.time ? `time ${progressInfo.time}` : null,
+                  progressInfo.speed ? `speed ${progressInfo.speed}` : null,
+                ].filter(Boolean).join(' | ');
+
+                jobs.set(jobId, {
+                  ...jobs.get(jobId),
+                  step: oneMbMode
+                    ? `Smart ${format.toUpperCase()} encoding... ${details}`
+                    : `Encoding ${format.toUpperCase()}... ${details}`,
+                  progress: Math.max(
+                    jobs.get(jobId)?.progress || 60,
+                    Math.min(86, (jobs.get(jobId)?.progress || 60) + 1)
+                  ),
+                });
+
+                console.log(`[SVGA->${format.toUpperCase()}][Attempt ${attempt}] ${details || progressInfo.raw}`);
+              },
+            });
+          }
+
+          const candidateBuffer = fs.readFileSync(outputPath);
+          const candidate = {
+            attempt,
+            path: outputPath,
+            buffer: candidateBuffer,
+            size: candidateBuffer.length,
+            sizeMB: toFixedSafe(candidateBuffer.length / (1024 * 1024), 2),
+            plan,
+          };
+
+          attempts.push({
+            attempt,
+            sizeMB: candidate.sizeMB,
+            quality: plan?.quality ?? null,
+            width: plan?.width ?? plan?.maxWidth ?? null,
+            height: plan?.height ?? null,
+          });
+
+          if (
+            !bestCandidate ||
+            Math.abs(candidate.size - targetConfig.targetBytes) < Math.abs(bestCandidate.size - targetConfig.targetBytes)
+          ) {
+            bestCandidate = candidate;
+          }
+
+          jobs.set(jobId, {
+            ...jobs.get(jobId),
+            step: oneMbMode
+              ? `Smart compression attempt ${attempt}/${maxAttempts} -> ${candidate.sizeMB} MB`
+              : `Encoded ${format.toUpperCase()} -> ${candidate.sizeMB} MB`,
+            progress: Math.min(88, 60 + Math.round((attempt / maxAttempts) * 28)),
+          });
+
+          if (!oneMbMode || candidate.size <= targetConfig.toleranceBytes) {
+            break;
+          }
+        }
+
+        if (!bestCandidate) {
+          throw new Error(`Unable to encode ${format.toUpperCase()} output.`);
+        }
+
+        outputBuffer = bestCandidate.buffer;
+        filename = `converted_${Date.now()}.${format}`;
+        mimetype = format === 'gif' ? 'image/gif' : 'image/webp';
+        compressionSummary = createCompressionSummary({
+          inputSize: req.file.size,
+          outputSize: outputBuffer.length,
+          targetConfig,
+          attempts,
+          oneMbMode,
         });
       }
+    }
 
-      console.log('Reading output file...');
-      outputBuffer = fs.readFileSync(outputPath);
-      filename = `converted_${Date.now()}.${format}`;
-      mimetype = format === 'gif' ? 'image/gif' : 'image/webp';
+    if (format === 'json') {
+      compressionSummary = createCompressionSummary({
+        inputSize: req.file.size,
+        outputSize: outputBuffer.length,
+        targetConfig,
+        attempts: [{
+          attempt: 1,
+          sizeMB: toFixedSafe(outputBuffer.length / (1024 * 1024), 2),
+          quality: null,
+          width: null,
+          height: null,
+        }],
+        oneMbMode,
+      });
     }
 
     jobs.set(jobId, { ...jobs.get(jobId), step: 'Finalizing...', progress: 90 });
@@ -200,6 +476,8 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
         mimetype,
         size: outputBuffer.length,
         metadata,
+        preview,
+        compression: compressionSummary,
       },
     });
 
@@ -209,7 +487,7 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
       jobId,
       filename,
       size: outputBuffer.length,
-      framesProcessed: renderedFrames.length
+      framesProcessed: renderResult.totalFrames
     });
 
     res.json({
@@ -218,8 +496,10 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
       filename,
       size: outputBuffer.length,
       sizeMB: toFixedSafe(outputBuffer.length / (1024 * 1024), 2),
-      framesProcessed: renderedFrames.length,
+      framesProcessed: renderResult.totalFrames,
       metadata,
+      oneMbMode,
+      compression: compressionSummary,
     });
 
   } catch (err) {
@@ -729,27 +1009,35 @@ router.get('/download/:jobId', (req, res) => {
   });
 
   const isPreviewRequest = req.query.preview === '1';
-  res.setHeader('Content-Type', job.result.mimetype);
+  const responsePayload = isPreviewRequest && job.result.preview
+    ? job.result.preview
+    : job.result;
+
+  res.setHeader('Content-Type', responsePayload.mimetype);
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   // Preview requests should be inline for player compatibility.
-  if (isPreviewRequest || job.result.mimetype.startsWith('image/') || job.result.mimetype === 'application/json') {
-    res.setHeader('Content-Disposition', `inline; filename="${job.result.filename}"`);
+  if (isPreviewRequest || responsePayload.mimetype.startsWith('image/') || responsePayload.mimetype === 'application/json') {
+    res.setHeader('Content-Disposition', `inline; filename="${responsePayload.filename}"`);
   } else {
-    res.setHeader('Content-Disposition', `attachment; filename="${job.result.filename}"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${responsePayload.filename}"`);
   }
 
-  res.setHeader('Content-Length', job.result.buffer.length);
+  res.setHeader('Content-Length', responsePayload.buffer.length);
   res.setHeader('Cache-Control', 'no-cache');
 
-  console.log('Sending buffer of size:', job.result.buffer.length);
-  res.send(job.result.buffer);
+  console.log('Sending buffer of size:', responsePayload.buffer.length);
+  res.send(responsePayload.buffer);
 
   // Cleanup job data after download (optional, free memory)
-  setTimeout(() => {
-    console.log('Cleaning up job:', req.params.jobId);
-    jobs.delete(req.params.jobId);
-  }, 60000); // Delete after 1 minute
+  if (!cleanupTimers.has(req.params.jobId)) {
+    const cleanupTimer = setTimeout(() => {
+      console.log('Cleaning up job:', req.params.jobId);
+      jobs.delete(req.params.jobId);
+      cleanupTimers.delete(req.params.jobId);
+    }, 60000);
+    cleanupTimers.set(req.params.jobId, cleanupTimer);
+  }
 });
 
 /**

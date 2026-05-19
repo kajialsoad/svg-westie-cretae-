@@ -3,6 +3,8 @@
  * Renders SVGA frames with proper sprite transforms
  */
 
+const fs = require('fs');
+const path = require('path');
 const { createCanvas, loadImage } = require('canvas');
 
 /**
@@ -194,7 +196,127 @@ async function renderAllFrames(movieData, images) {
   return renderedFrames;
 }
 
+async function renderFramesToDirectory(movieData, images, outputDir, options = {}) {
+  const params = movieData.params || {};
+  const width = params.viewBoxWidth || 300;
+  const height = params.viewBoxHeight || 300;
+  const totalFrames = params.frames || 1;
+  const sprites = movieData.sprites || [];
+
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  console.log(`Rendering ${totalFrames} frames to disk at ${width}x${height}`);
+
+  const convertedImages = {};
+  for (const [key, rawBuf] of Object.entries(images || {})) {
+    const buf = toNodeBuffer(rawBuf);
+    if (buf && buf.length > 0) {
+      convertedImages[key] = buf;
+    }
+  }
+
+  let previewBuffer = null;
+  const framePaths = [];
+
+  for (let frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
+    const frameSprites = [];
+
+    for (const sprite of sprites) {
+      if (!sprite.imageKey || !convertedImages[sprite.imageKey]) continue;
+
+      const spriteFrames = sprite.frames || [];
+      const frameData = spriteFrames[frameIdx];
+
+      if (!frameData || !frameData.alpha || frameData.alpha <= 0) continue;
+
+      frameSprites.push({
+        imageBuffer: convertedImages[sprite.imageKey],
+        alpha: frameData.alpha,
+        transform: frameData.transform,
+        layout: frameData.layout,
+      });
+    }
+
+    let buffer;
+    if (frameSprites.length > 0) {
+      buffer = await renderFrame({ sprites: frameSprites }, width, height);
+    } else {
+      const canvas = createCanvas(width, height);
+      buffer = canvas.toBuffer('image/png');
+    }
+
+    if (!previewBuffer) {
+      previewBuffer = buffer;
+    }
+
+    const framePath = path.join(outputDir, `frame_${String(frameIdx + 1).padStart(4, '0')}.png`);
+    fs.writeFileSync(framePath, buffer);
+    framePaths.push(framePath);
+
+    if (typeof options.onFrame === 'function') {
+      options.onFrame({
+        frameIndex: frameIdx,
+        totalFrames,
+        framePath,
+      });
+    }
+
+    if ((frameIdx + 1) % 10 === 0) {
+      console.log(`Rendered ${frameIdx + 1}/${totalFrames} frames to disk`);
+    }
+  }
+
+  return {
+    width,
+    height,
+    totalFrames,
+    framePaths,
+    previewBuffer,
+  };
+}
+
+async function renderPreviewFrame(movieData, images, frameIndex = 0) {
+  const params = movieData.params || {};
+  const width = params.viewBoxWidth || 300;
+  const height = params.viewBoxHeight || 300;
+  const sprites = movieData.sprites || [];
+
+  const convertedImages = {};
+  for (const [key, rawBuf] of Object.entries(images || {})) {
+    const buf = toNodeBuffer(rawBuf);
+    if (buf && buf.length > 0) {
+      convertedImages[key] = buf;
+    }
+  }
+
+  const frameSprites = [];
+  for (const sprite of sprites) {
+    if (!sprite.imageKey || !convertedImages[sprite.imageKey]) continue;
+
+    const spriteFrames = sprite.frames || [];
+    const frameData = spriteFrames[frameIndex];
+
+    if (!frameData || !frameData.alpha || frameData.alpha <= 0) continue;
+
+    frameSprites.push({
+      imageBuffer: convertedImages[sprite.imageKey],
+      alpha: frameData.alpha,
+      transform: frameData.transform,
+      layout: frameData.layout,
+    });
+  }
+
+  if (frameSprites.length > 0) {
+    return renderFrame({ sprites: frameSprites }, width, height);
+  }
+
+  const canvas = createCanvas(width, height);
+  return canvas.toBuffer('image/png');
+}
+
 module.exports = {
   renderFrame,
   renderAllFrames,
+  renderFramesToDirectory,
+  renderPreviewFrame,
 };

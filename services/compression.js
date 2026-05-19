@@ -92,6 +92,13 @@ const VIDEO_SVGA_SIZE_POLICY = {
   hardMaxMB: 50,
 };
 
+const ONE_MB_POLICY = {
+  label: 'ONE MB',
+  targetSizeMB: 1,
+  targetBytes: 1024 * 1024,
+  toleranceBytes: Math.round(1.35 * 1024 * 1024),
+};
+
 /**
  * Get compression settings for a size tier
  * @param {string} tier - 'lite', 'standard', or 'high'
@@ -99,6 +106,48 @@ const VIDEO_SVGA_SIZE_POLICY = {
  */
 function getTierSettings(tier) {
   return SIZE_TIERS[tier] || SIZE_TIERS.standard;
+}
+
+function isOneMbModeEnabled(value) {
+  if (value === true) return true;
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
+}
+
+function toEvenNumber(value) {
+  const safe = Math.max(2, Math.round(value || 2));
+  return safe % 2 === 0 ? safe : safe - 1;
+}
+
+function getTargetConfig({ tier = 'standard', oneMbMode = false } = {}) {
+  const settings = getTierSettings(tier);
+  if (!oneMbMode) {
+    return {
+      mode: 'tier',
+      label: settings.label,
+      targetSizeMB: settings.maxSizeMB,
+      targetBytes: settings.maxSizeBytes,
+      maxSizeMB: settings.maxSizeMB,
+      maxSizeBytes: settings.maxSizeBytes,
+      toleranceBytes: settings.maxSizeBytes,
+    };
+  }
+
+  return {
+    mode: 'one-mb',
+    label: ONE_MB_POLICY.label,
+    targetSizeMB: ONE_MB_POLICY.targetSizeMB,
+    targetBytes: ONE_MB_POLICY.targetBytes,
+    maxSizeMB: ONE_MB_POLICY.targetSizeMB,
+    maxSizeBytes: ONE_MB_POLICY.targetBytes,
+    toleranceBytes: ONE_MB_POLICY.toleranceBytes,
+  };
+}
+
+function estimateCompressionRatio(inputBytes, targetBytes) {
+  const safeInput = Math.max(1, Number(inputBytes) || 1);
+  const safeTarget = Math.max(1, Number(targetBytes) || 1);
+  return safeInput / safeTarget;
 }
 
 /**
@@ -281,9 +330,84 @@ function getRetryPlan(tier, attemptIndex, currentFps, sizeRatio = 1) {
   };
 }
 
+function getOneMbAttemptPlan(format, attemptIndex, metadata = {}, tier = 'standard') {
+  const settings = getTierSettings(tier);
+  const width = metadata.width || metadata.viewBoxWidth || 720;
+  const height = metadata.height || metadata.viewBoxHeight || 720;
+  const capped = Math.max(1, Math.min(6, attemptIndex));
+
+  const webpPlans = [
+    { quality: Math.min(88, settings.quality), compressionLevel: 4, scaleRatio: 1.0 },
+    { quality: Math.min(82, settings.quality), compressionLevel: 4, scaleRatio: 1.0 },
+    { quality: 76, compressionLevel: 4, scaleRatio: 1.0 },
+    { quality: 70, compressionLevel: 3, scaleRatio: 1.0 },
+    { quality: 64, compressionLevel: 3, scaleRatio: 1.0 },
+    { quality: 58, compressionLevel: 3, scaleRatio: 1.0 },
+  ];
+
+  const gifPlans = [
+    { maxWidth: toEvenNumber(Math.min(settings.resolution, width)), ditherScale: 5 },
+    { maxWidth: toEvenNumber(Math.min(settings.resolution, width * 0.94)), ditherScale: 4 },
+    { maxWidth: toEvenNumber(Math.min(settings.resolution, width * 0.88)), ditherScale: 4 },
+    { maxWidth: toEvenNumber(Math.min(settings.resolution, width * 0.82)), ditherScale: 3 },
+    { maxWidth: toEvenNumber(Math.min(settings.resolution, width * 0.76)), ditherScale: 3 },
+    { maxWidth: toEvenNumber(Math.min(settings.resolution, width * 0.7)), ditherScale: 2 },
+  ];
+
+  if (format === 'gif') {
+    const plan = gifPlans[capped - 1];
+    return {
+      format,
+      ...plan,
+      stripMetadata: true,
+    };
+  }
+
+  if (format === 'json') {
+    return {
+      format,
+      minifyJson: true,
+      stripMetadata: true,
+    };
+  }
+
+  if (format === 'svga') {
+    const svgaPlans = [
+      { palette: true, colors: 192, quality: 88, compressionLevel: 9, effort: 8, zlibLevel: 9 },
+      { palette: true, colors: 96, quality: 76, compressionLevel: 9, effort: 7, zlibLevel: 9 },
+      { palette: true, colors: 64, quality: 68, compressionLevel: 9, effort: 6, zlibLevel: 9 },
+      { palette: true, colors: 48, quality: 64, compressionLevel: 9, effort: 6, zlibLevel: 9 },
+      { palette: true, colors: 32, quality: 58, compressionLevel: 9, effort: 5, zlibLevel: 9 },
+      { palette: true, colors: 24, quality: 52, compressionLevel: 9, effort: 5, zlibLevel: 9 },
+    ];
+    const plan = svgaPlans[capped - 1];
+    return {
+      format,
+      width: toEvenNumber(Math.min(settings.resolution, width)),
+      height: toEvenNumber(Math.min(settings.resolution, height)),
+      stripMetadata: true,
+      ...plan,
+    };
+  }
+
+  const plan = webpPlans[capped - 1];
+  return {
+    format: 'webp',
+    quality: plan.quality,
+    compressionLevel: plan.compressionLevel,
+    width: toEvenNumber(Math.min(settings.resolution, width * plan.scaleRatio)),
+    height: toEvenNumber(Math.min(settings.resolution, height * plan.scaleRatio)),
+    stripMetadata: true,
+  };
+}
+
 module.exports = {
   SIZE_TIERS,
+  ONE_MB_POLICY,
   getTierSettings,
+  isOneMbModeEnabled,
+  getTargetConfig,
+  estimateCompressionRatio,
   calculateBitrate,
   calculateFPS,
   calculateResolution,
@@ -292,4 +416,5 @@ module.exports = {
   getVideoOptimizationProfile,
   getSizeGovernance,
   getRetryPlan,
+  getOneMbAttemptPlan,
 };

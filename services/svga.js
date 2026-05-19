@@ -9,6 +9,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const pako = require('pako');
 const protobuf = require('protobufjs');
+const sharp = require('sharp');
 
 let MovieEntity = null;
 
@@ -345,9 +346,162 @@ async function encodeSVGA(frames, options = {}) {
   const buffer = Movie.encode(message).finish();
 
   // Compress with zlib
-  const compressed = pako.deflate(buffer);
+  const compressed = pako.deflate(buffer, { level: options.zlibLevel || 6 });
 
   return Buffer.from(compressed);
+}
+
+function cloneMovieData(movieData, imagesOverride) {
+  return {
+    version: movieData.version || '2.0.0',
+    params: { ...(movieData.params || {}) },
+    images: imagesOverride || Object.fromEntries(
+      Object.entries(movieData.images || {}).map(([key, value]) => [key, Buffer.from(value)])
+    ),
+    sprites: JSON.parse(JSON.stringify(movieData.sprites || [])),
+    audios: JSON.parse(JSON.stringify(movieData.audios || [])),
+  };
+}
+
+async function optimizeMovieData(movieData, options = {}) {
+  const optimizedImages = {};
+
+  for (const [key, rawBuffer] of Object.entries(movieData.images || {})) {
+    const sourceBuffer = Buffer.from(rawBuffer);
+
+    try {
+      const optimizedBuffer = await sharp(sourceBuffer, { animated: false, failOn: 'none' })
+        .png({
+          palette: options.palette === true,
+          colors: options.colors || 256,
+          quality: options.quality || 100,
+          compressionLevel: options.compressionLevel || 9,
+          effort: options.effort || 10,
+          progressive: false,
+        })
+        .toBuffer();
+
+      optimizedImages[key] = optimizedBuffer.length <= sourceBuffer.length
+        ? optimizedBuffer
+        : sourceBuffer;
+    } catch (err) {
+      // Non-image buffers such as audio remain untouched.
+      optimizedImages[key] = sourceBuffer;
+    }
+  }
+
+  return cloneMovieData(movieData, optimizedImages);
+}
+
+/**
+ * ONE MB mode: Aggressive asset optimization for SVGA
+ * Preserves timeline/FPS/layer order while shrinking embedded assets.
+ */
+async function optimizeMovieDataForOneMb(movieData, options = {}) {
+  const startTime = Date.now();
+  console.log('[ONE MB] Starting aggressive asset optimization...');
+
+  const imageHashes = new Map();
+  const keyToHash = new Map();
+  const hashToCanonicalKey = new Map();
+
+  for (const [key, rawBuffer] of Object.entries(movieData.images || {})) {
+    const sourceBuffer = Buffer.from(rawBuffer);
+    const hashInput = Buffer.concat([
+      sourceBuffer.slice(0, Math.min(1024, sourceBuffer.length)),
+      Buffer.from(String(sourceBuffer.length))
+    ]);
+    const hash = crypto.createHash('sha256').update(hashInput).update(sourceBuffer).digest('hex');
+
+    keyToHash.set(key, hash);
+
+    if (!imageHashes.has(hash)) {
+      imageHashes.set(hash, { key, buffer: sourceBuffer, refs: 1 });
+      hashToCanonicalKey.set(hash, key);
+    } else {
+      imageHashes.get(hash).refs++;
+    }
+  }
+
+  const uniqueImages = imageHashes.size;
+  const totalImages = keyToHash.size;
+  console.log(`[ONE MB] Deduplication: ${uniqueImages} unique / ${totalImages} total images`);
+
+  const optimizedUniqueImages = {};
+  const paletteSettings = {
+    palette: true,
+    colors: options.colors || 128,
+    quality: options.quality || 85,
+    compressionLevel: options.compressionLevel || 9,
+    effort: Math.min(options.effort || 10, 8),
+    progressive: false,
+  };
+
+  console.log(`[ONE MB] Palette settings:`, {
+    colors: paletteSettings.colors,
+    quality: paletteSettings.quality,
+    compressionLevel: paletteSettings.compressionLevel
+  });
+
+  for (const [hash, { key, buffer: sourceBuffer }] of imageHashes) {
+    try {
+      const optimizedBuffer = await sharp(sourceBuffer, { animated: false, failOn: 'none' })
+        .png(paletteSettings)
+        .toBuffer();
+
+      const finalBuffer = optimizedBuffer.length < sourceBuffer.length * 0.97
+        ? optimizedBuffer
+        : sourceBuffer;
+
+      optimizedUniqueImages[key] = finalBuffer;
+
+      if (optimizedBuffer.length < sourceBuffer.length) {
+        console.log(`[ONE MB] Image ${key}: ${sourceBuffer.length} -> ${optimizedBuffer.length} bytes (${((optimizedBuffer.length / sourceBuffer.length) * 100).toFixed(1)}%)`);
+      }
+    } catch (err) {
+      console.warn(`[ONE MB] Failed to optimize image ${key}:`, err.message);
+      optimizedUniqueImages[key] = sourceBuffer;
+    }
+  }
+
+  const optimizedMovieData = cloneMovieData(movieData, optimizedUniqueImages);
+  optimizedMovieData.sprites = (optimizedMovieData.sprites || []).map((sprite) => {
+    if (!sprite.imageKey) return sprite;
+
+    const hash = keyToHash.get(sprite.imageKey);
+    const canonicalKey = hash ? hashToCanonicalKey.get(hash) : sprite.imageKey;
+
+    return {
+      ...sprite,
+      imageKey: canonicalKey || sprite.imageKey,
+    };
+  });
+
+  const duration = Date.now() - startTime;
+  console.log(`[ONE MB] Optimization complete in ${duration}ms:`);
+  console.log(`  - Images: ${totalImages} -> ${Object.keys(optimizedUniqueImages).length} (deduped unique assets)`);
+  console.log(`  - Palette: ${paletteSettings.colors} colors, quality ${paletteSettings.quality}`);
+
+  return optimizedMovieData;
+}
+
+async function encodeMovieData(movieData, options = {}) {
+  const Movie = await loadProto();
+  const normalizedMovieData = cloneMovieData(movieData);
+  const errMsg = Movie.verify(normalizedMovieData);
+  if (errMsg) {
+    console.warn('SVGA verify warning:', errMsg);
+  }
+
+  const message = Movie.create(normalizedMovieData);
+  const buffer = Movie.encode(message).finish();
+  const compressed = pako.deflate(buffer, { level: options.zlibLevel || 9 });
+  return Buffer.from(compressed);
+}
+
+async function optimizeAndEncodeMovieData(movieData, options = {}) {
+  const optimizedMovieData = await optimizeMovieData(movieData, options);
+  return encodeMovieData(optimizedMovieData, options);
 }
 
 module.exports = {
@@ -357,5 +511,9 @@ module.exports = {
   extractFramesForRendering,
   getMetadata,
   encodeSVGA,
+  encodeMovieData,
+  optimizeMovieData,
+  optimizeAndEncodeMovieData,
+  optimizeMovieDataForOneMb,
   loadProto,
 };

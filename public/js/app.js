@@ -11,6 +11,7 @@ const state = {
 };
 
 let svgaLibLoadingPromise = null;
+const ONE_MB_TARGET_BYTES = 1024 * 1024;
 async function ensureSVGALibraryLoaded() {
   if (typeof SVGA !== 'undefined') return true;
   if (svgaLibLoadingPromise) return svgaLibLoadingPromise;
@@ -135,6 +136,7 @@ function setFile(module, file) {
   // Show preview
   if (module === 'svga-webp') {
     showSVGAPreview(file);
+    updateSvgaCompressionUI();
   } else {
     showVideoPreview(file);
   }
@@ -163,6 +165,61 @@ function showVideoPreview(file) {
 }
 
 // SVGA Preview is now handled by svga-preview.js
+
+function updateSvgaCompressionUI() {
+  const formatRadio = document.querySelector('input[name="svga-format"]:checked');
+  const format = formatRadio ? formatRadio.value : 'webp';
+  const oneMbEnabled = document.getElementById('svga-one-mb-mode')?.checked === true;
+  const formatEl = document.getElementById('svga-one-mb-format');
+  const ratioEl = document.getElementById('svga-one-mb-ratio');
+  const statusEl = document.getElementById('svga-one-mb-status');
+  const file = state.files['svga-webp'];
+
+  if (formatEl) formatEl.textContent = format.toUpperCase();
+
+  if (ratioEl) {
+    const ratio = file ? Math.max(1, file.size / ONE_MB_TARGET_BYTES) : 10;
+    ratioEl.textContent = `${ratio.toFixed(2)}x`;
+  }
+
+  if (statusEl) {
+    if (!oneMbEnabled) {
+      statusEl.textContent = 'Disabled. Standard size tier rules are active.';
+    } else if (!file) {
+      statusEl.textContent = `Enabled. ${format.toUpperCase()} output will stay the same format and target about 1 MB after upload.`;
+    } else {
+      statusEl.textContent = `Enabled. Smart compression will preserve animation timing and keep ${format.toUpperCase()} output while pushing ${(file.size / (1024 * 1024)).toFixed(2)} MB toward ~1 MB.`;
+    }
+  }
+}
+
+function renderSvgaCompressionResult(compressionData) {
+  const summaryBox = document.getElementById('svga-compression-summary');
+  const finalSize = document.getElementById('svga-final-size');
+  const finalRatio = document.getElementById('svga-final-ratio');
+  const finalSaved = document.getElementById('svga-final-saved');
+  const finalTarget = document.getElementById('svga-final-target');
+  const note = document.getElementById('svga-compression-note');
+
+  if (!summaryBox || !compressionData) return;
+
+  summaryBox.style.display = 'block';
+  if (finalSize) finalSize.textContent = `${compressionData.finalSizeMB} MB`;
+  if (finalRatio) finalRatio.textContent = `${compressionData.compressionRatio}x`;
+  if (finalSaved) finalSaved.textContent = `${compressionData.savedPercent}%`;
+  if (finalTarget) finalTarget.textContent = compressionData.mode === 'one-mb' ? '~1 MB' : 'Tier Optimized';
+
+  if (note) {
+    const attempts = Array.isArray(compressionData.attempts) ? compressionData.attempts.length : 0;
+    if (compressionData.mode === 'one-mb') {
+      note.textContent = compressionData.targetMet
+        ? `ONE MB mode hit the visual-safe target in ${attempts} attempt${attempts === 1 ? '' : 's'}.`
+        : `ONE MB mode used ${attempts} attempt${attempts === 1 ? '' : 's'} and picked the closest visual-safe result.`;
+    } else {
+      note.textContent = 'Standard conversion completed with the selected size tier settings.';
+    }
+  }
+}
 
 function resetModule(module) {
   state.files[module] = null;
@@ -221,6 +278,9 @@ function resetModule(module) {
   if (module === 'svga-webp') {
     const previewBox = document.getElementById('svga-upload-preview');
     if (previewBox) previewBox.style.display = 'none';
+    const summaryBox = document.getElementById('svga-compression-summary');
+    if (summaryBox) summaryBox.style.display = 'none';
+    updateSvgaCompressionUI();
     // Player cleanup is handled by svga-preview.js
   } else if (module === 'video-svga') {
     const previewBox = document.getElementById('video-upload-preview');
@@ -241,6 +301,21 @@ document.addEventListener('click', (e) => {
     if (radio) {
       radio.checked = true;
       // Removed auto-trigger to allow manual convert
+    }
+    if (group?.querySelector('input[name="svga-size"]')) {
+      updateSvgaCompressionUI();
+    }
+  }
+
+  const formatOption = e.target.closest('.format-option');
+  if (formatOption) {
+    const group = formatOption.closest('.format-options');
+    group.querySelectorAll('.format-option').forEach(o => o.classList.remove('selected'));
+    formatOption.classList.add('selected');
+    const radio = formatOption.querySelector('input[type="radio"]');
+    if (radio) {
+      radio.checked = true;
+      updateSvgaCompressionUI();
     }
   }
 
@@ -287,6 +362,8 @@ async function startConversion(module) {
   // Get selected size tier
   const sizeRadio = document.querySelector(`input[name="${prefix}-size"]:checked`);
   const sizeTier = sizeRadio ? sizeRadio.value : 'standard';
+  const summaryBox = document.getElementById('svga-compression-summary');
+  if (summaryBox && module === 'svga-webp') summaryBox.style.display = 'none';
 
   // UI: Loading state
   if (statusEl) statusEl.style.display = 'flex';
@@ -307,8 +384,15 @@ async function startConversion(module) {
     if (module === 'svga-webp') {
       const formatRadio = document.querySelector('input[name="svga-format"]:checked');
       const format = formatRadio ? formatRadio.value : 'webp';
+      const oneMbCheckbox = document.getElementById('svga-one-mb-mode');
+      const oneMbMode = !!(oneMbCheckbox && (oneMbCheckbox.checked || oneMbCheckbox.matches(':checked')));
       formData.append('format', format);
+      formData.append('oneMbMode', oneMbMode ? '1' : '0');
       console.log('SVGA format:', format);
+      console.log('ONE MB mode:', oneMbMode, {
+        checkboxFound: !!oneMbCheckbox,
+        checked: oneMbCheckbox?.checked,
+      });
     }
 
     if (module === 'video-svga') {
@@ -331,7 +415,9 @@ async function startConversion(module) {
     }
 
     progressBar.style.width = '30%';
-    progressStep.textContent = 'Uploading & Processing...';
+    progressStep.textContent = module === 'svga-webp' && document.getElementById('svga-one-mb-mode')?.checked
+      ? 'Uploading & running smart compression...'
+      : 'Uploading & Processing...';
 
     const endpoint = module === 'svga-webp' ? '/api/convert/svga' : '/api/convert/video-svga';
     console.log('Sending request to:', endpoint);
@@ -369,11 +455,16 @@ async function startConversion(module) {
       }, 100);
 
       const infoEl = document.getElementById(`${prefix}-result-info`);
+      if (module === 'svga-webp' && data.compression) {
+        renderSvgaCompressionResult(data.compression);
+      }
       infoEl.innerHTML = `
         <strong>✅ Conversion Complete</strong><br>
         File: ${data.filename}<br>
         Size: ${data.sizeMB} MB<br>
-        ${data.framesProcessed ? `Frames: ${data.framesProcessed}` : ''}
+        ${data.framesProcessed ? `Frames: ${data.framesProcessed}<br>` : ''}
+        ${data.compression ? `Ratio: ${data.compression.compressionRatio}x<br>` : ''}
+        ${data.oneMbMode ? `Mode: ONE MB Smart Compression` : 'Mode: Standard Compression'}
       `;
 
       // Preview logic
@@ -397,32 +488,185 @@ async function startConversion(module) {
         } catch (e) {
           if (jsonContent) jsonContent.textContent = 'Error loading JSON preview';
         }
+      } else if (module === 'svga-webp' && format === 'svga') {
+        if (convertedPreviewBox) convertedPreviewBox.style.display = 'block';
+        if (jsonViewer) jsonViewer.style.display = 'none';
+
+        if (convertedCanvas) {
+          convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Loading SVGA Preview...</div>';
+          convertedCanvas.classList.remove('checkerboard-bg', 'opaque-preview');
+
+          const svgaReady = await ensureSVGALibraryLoaded();
+          if (svgaReady && typeof SVGA !== 'undefined') {
+            const parser = new SVGA.Parser();
+            const outputUrl = `/api/download/${data.jobId}?t=${Date.now()}`;
+            let outputObjectUrl = null;
+
+            try {
+              const outputRes = await fetch(outputUrl, { cache: 'no-store' });
+              if (!outputRes.ok) {
+                throw new Error(`SVGA download failed: HTTP ${outputRes.status}`);
+              }
+
+              const outputBlob = await outputRes.blob();
+              outputObjectUrl = URL.createObjectURL(outputBlob);
+            } catch (fetchErr) {
+              console.error('[Preview][SVGA Output][FetchError]', fetchErr);
+              convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA preview fetch failed. Please download file.</div>';
+              return;
+            }
+
+            parser.load(outputObjectUrl, (videoItem) => {
+              const nativeW = videoItem.videoSize.width || 300;
+              const nativeH = videoItem.videoSize.height || 300;
+
+              convertedCanvas.innerHTML = '';
+              convertedCanvas.classList.add('checkerboard-bg');
+              convertedCanvas.classList.remove('opaque-preview');
+
+              const canvas = document.createElement('canvas');
+              canvas.width = nativeW;
+              canvas.height = nativeH;
+              const ctx = canvas.getContext('2d', {
+                alpha: true,
+                premultipliedAlpha: false,
+                desynchronized: true
+              });
+              if (ctx) {
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+              }
+              convertedCanvas.appendChild(canvas);
+
+              const player = new SVGA.Player(canvas);
+              player.clearsAfterStop = false;
+              player.fillMode = 'Forward';
+              if (player.setContentMode) {
+                player.setContentMode('AspectFit');
+              }
+              player.setVideoItem(videoItem);
+              player.startAnimation();
+
+              if (outputObjectUrl) {
+                URL.revokeObjectURL(outputObjectUrl);
+              }
+            }, (err) => {
+              console.error('SVGA output load error:', err);
+              convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA Preview failed. Please download to view.</div>';
+              if (outputObjectUrl) {
+                URL.revokeObjectURL(outputObjectUrl);
+              }
+            });
+          } else {
+            convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA library not loaded</div>';
+          }
+        }
+
+        if (convertedDetails) {
+          convertedDetails.innerHTML = `
+            <span>${data.filename}</span>
+            <span>${data.sizeMB} MB</span>
+          `;
+        }
       } else if (module === 'svga-webp') {
         if (convertedPreviewBox) convertedPreviewBox.style.display = 'block';
         if (jsonViewer) jsonViewer.style.display = 'none';
 
-        // Render image in player-canvas (same as Source Preview)
+        // Render the actual converted animated output first.
+        // Fallback to the static preview PNG only if animated fetch/render fails.
         if (convertedCanvas) {
           convertedCanvas.innerHTML = '';
 
+          const outputUrl = `/api/download/${data.jobId}?t=${Date.now()}`;
           const previewUrl = `/api/download/${data.jobId}?preview=1&t=${Date.now()}`;
+          try {
+            const outputRes = await fetch(outputUrl, { cache: 'no-store' });
+            if (!outputRes.ok) {
+              throw new Error(`HTTP ${outputRes.status}`);
+            }
 
-          const img = document.createElement('img');
-          img.src = previewUrl;
-          img.alt = `Converted ${format.toUpperCase()}`;
-          img.style.cssText = `
-            max-width: 100%;
-            max-height: 100%;
-            display: block;
-            margin: 0 auto;
-            object-fit: contain;
-          `;
+            const outputBlob = await outputRes.blob();
+            const outputObjectUrl = URL.createObjectURL(outputBlob);
 
-          img.onerror = function () {
-            convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
-          };
+            const img = document.createElement('img');
+            img.src = outputObjectUrl;
+            img.alt = `Converted ${format.toUpperCase()}`;
+            img.style.cssText = `
+              max-width: 100%;
+              max-height: 100%;
+              display: block;
+              margin: 0 auto;
+              object-fit: contain;
+            `;
 
-          convertedCanvas.appendChild(img);
+            img.onload = function () {
+              setTimeout(() => URL.revokeObjectURL(outputObjectUrl), 1000);
+            };
+
+            img.onerror = async function () {
+              URL.revokeObjectURL(outputObjectUrl);
+
+              try {
+                const previewRes = await fetch(previewUrl, { cache: 'no-store' });
+                if (!previewRes.ok) {
+                  throw new Error(`HTTP ${previewRes.status}`);
+                }
+
+                const previewBlob = await previewRes.blob();
+                const previewObjectUrl = URL.createObjectURL(previewBlob);
+                const fallbackImg = document.createElement('img');
+                fallbackImg.src = previewObjectUrl;
+                fallbackImg.alt = `Converted ${format.toUpperCase()} preview`;
+                fallbackImg.style.cssText = img.style.cssText;
+                fallbackImg.onload = function () {
+                  setTimeout(() => URL.revokeObjectURL(previewObjectUrl), 1000);
+                };
+                fallbackImg.onerror = function () {
+                  URL.revokeObjectURL(previewObjectUrl);
+                  convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
+                };
+
+                convertedCanvas.innerHTML = '';
+                convertedCanvas.appendChild(fallbackImg);
+              } catch (fallbackErr) {
+                console.error('Preview fallback failed:', fallbackErr);
+                convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
+              }
+            };
+
+            convertedCanvas.appendChild(img);
+          } catch (previewErr) {
+            console.error('Preview fetch failed:', previewErr);
+            try {
+              const previewRes = await fetch(previewUrl, { cache: 'no-store' });
+              if (!previewRes.ok) {
+                throw new Error(`HTTP ${previewRes.status}`);
+              }
+              const previewBlob = await previewRes.blob();
+              const previewObjectUrl = URL.createObjectURL(previewBlob);
+              const img = document.createElement('img');
+              img.src = previewObjectUrl;
+              img.alt = `Converted ${format.toUpperCase()} preview`;
+              img.style.cssText = `
+                max-width: 100%;
+                max-height: 100%;
+                display: block;
+                margin: 0 auto;
+                object-fit: contain;
+              `;
+              img.onload = function () {
+                setTimeout(() => URL.revokeObjectURL(previewObjectUrl), 1000);
+              };
+              img.onerror = function () {
+                URL.revokeObjectURL(previewObjectUrl);
+                convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
+              };
+              convertedCanvas.appendChild(img);
+            } catch (fallbackErr) {
+              console.error('Preview fallback failed:', fallbackErr);
+              convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
+            }
+          }
         }
 
         // Show file details (same as Source Preview)
@@ -784,4 +1028,6 @@ document.addEventListener('DOMContentLoaded', () => {
   checkHealth();
   renderHistory();
   navigateTo('home');
+  document.getElementById('svga-one-mb-mode')?.addEventListener('change', updateSvgaCompressionUI);
+  updateSvgaCompressionUI();
 });
