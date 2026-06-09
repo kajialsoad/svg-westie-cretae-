@@ -13,7 +13,7 @@ const SIZE_TIERS = {
     maxSizeBytes: 5 * 1024 * 1024,
     resolution: 480,
     fpsRange: [15, 30],
-    quality: 60,
+    quality: 82,
   },
   standard: {
     label: 'Standard',
@@ -21,7 +21,7 @@ const SIZE_TIERS = {
     maxSizeBytes: 10 * 1024 * 1024,
     resolution: 720,
     fpsRange: [20, 30],
-    quality: 70,
+    quality: 92,
   },
   high: {
     label: 'High Quality',
@@ -29,7 +29,7 @@ const SIZE_TIERS = {
     maxSizeBytes: 15 * 1024 * 1024,
     resolution: 1080,
     fpsRange: [24, 60],
-    quality: 85,
+    quality: 96,
   },
   ultra: {
     label: 'Ultra Fidelity',
@@ -119,7 +119,7 @@ function toEvenNumber(value) {
   return safe % 2 === 0 ? safe : safe - 1;
 }
 
-function getTargetConfig({ tier = 'standard', oneMbMode = false } = {}) {
+function getTargetConfig({ tier = 'standard', oneMbMode = false, sourceSizeBytes = null } = {}) {
   const settings = getTierSettings(tier);
   if (!oneMbMode) {
     return {
@@ -133,14 +133,29 @@ function getTargetConfig({ tier = 'standard', oneMbMode = false } = {}) {
     };
   }
 
+  const safeSourceSize = Number.isFinite(Number(sourceSizeBytes)) ? Math.max(1, Number(sourceSizeBytes)) : null;
+  const adaptiveTargetBytes = safeSourceSize
+    ? Math.min(ONE_MB_POLICY.targetBytes, safeSourceSize)
+    : ONE_MB_POLICY.targetBytes;
+  const adaptiveToleranceBytes = safeSourceSize
+    ? Math.min(
+      safeSourceSize,
+      Math.max(
+        adaptiveTargetBytes,
+        Math.round(adaptiveTargetBytes * 1.12)
+      )
+    )
+    : ONE_MB_POLICY.toleranceBytes;
+
   return {
     mode: 'one-mb',
     label: ONE_MB_POLICY.label,
-    targetSizeMB: ONE_MB_POLICY.targetSizeMB,
-    targetBytes: ONE_MB_POLICY.targetBytes,
-    maxSizeMB: ONE_MB_POLICY.targetSizeMB,
-    maxSizeBytes: ONE_MB_POLICY.targetBytes,
-    toleranceBytes: ONE_MB_POLICY.toleranceBytes,
+    targetSizeMB: Number((adaptiveTargetBytes / (1024 * 1024)).toFixed(2)),
+    targetBytes: adaptiveTargetBytes,
+    maxSizeMB: Number((adaptiveTargetBytes / (1024 * 1024)).toFixed(2)),
+    maxSizeBytes: adaptiveTargetBytes,
+    toleranceBytes: adaptiveToleranceBytes,
+    outputCeilingBytes: safeSourceSize || ONE_MB_POLICY.targetBytes,
   };
 }
 
@@ -197,9 +212,9 @@ function calculateResolution(tier, originalWidth, originalHeight) {
 
   if (originalWidth <= maxDim && originalHeight <= maxDim) {
     // Return even numbers for compatibility
-    return { 
-      width: originalWidth % 2 === 0 ? originalWidth : originalWidth - 1, 
-      height: originalHeight % 2 === 0 ? originalHeight : originalHeight - 1 
+    return {
+      width: originalWidth % 2 === 0 ? originalWidth : originalWidth - 1,
+      height: originalHeight % 2 === 0 ? originalHeight : originalHeight - 1
     };
   }
 
@@ -330,19 +345,26 @@ function getRetryPlan(tier, attemptIndex, currentFps, sizeRatio = 1) {
   };
 }
 
-function getOneMbAttemptPlan(format, attemptIndex, metadata = {}, tier = 'standard') {
+function getOneMbAttemptPlan(format, attemptIndex, metadata = {}, tier = 'standard', constraints = {}) {
   const settings = getTierSettings(tier);
   const width = metadata.width || metadata.viewBoxWidth || 720;
   const height = metadata.height || metadata.viewBoxHeight || 720;
-  const capped = Math.max(1, Math.min(6, attemptIndex));
+  const targetBytes = Number(constraints.targetBytes) || ONE_MB_POLICY.targetBytes;
+  const sourceSizeBytes = Number(constraints.sourceSizeBytes) || ONE_MB_POLICY.targetBytes;
+  const isTinyBudget = targetBytes <= 512 * 1024 || sourceSizeBytes <= 512 * 1024;
+  const capped = Math.max(1, Math.min(isTinyBudget ? 10 : 8, attemptIndex));
 
   const webpPlans = [
-    { quality: Math.min(88, settings.quality), compressionLevel: 4, scaleRatio: 1.0 },
-    { quality: Math.min(82, settings.quality), compressionLevel: 4, scaleRatio: 1.0 },
-    { quality: 76, compressionLevel: 4, scaleRatio: 1.0 },
-    { quality: 70, compressionLevel: 3, scaleRatio: 1.0 },
-    { quality: 64, compressionLevel: 3, scaleRatio: 1.0 },
-    { quality: 58, compressionLevel: 3, scaleRatio: 1.0 },
+    { quality: Math.min(96, settings.quality), compressionLevel: 5, scaleRatio: 1.0, alphaQuality: 100, preset: 'drawing', lossless: false, crThreshold: 0, crSize: 16 },
+    { quality: Math.min(92, settings.quality), compressionLevel: 5, scaleRatio: 1.0, alphaQuality: 100, preset: 'drawing', lossless: false, crThreshold: 8, crSize: 16 },
+    { quality: Math.min(88, settings.quality), compressionLevel: 4, scaleRatio: 1.0, alphaQuality: 96, preset: 'drawing', lossless: false, crThreshold: 12, crSize: 16 },
+    { quality: 82, compressionLevel: 4, scaleRatio: 1.0, alphaQuality: 92, preset: 'drawing', lossless: false, crThreshold: 18, crSize: 24 },
+    { quality: 74, compressionLevel: 4, scaleRatio: 1.0, alphaQuality: 88, preset: 'drawing', lossless: false, crThreshold: 24, crSize: 24 },
+    { quality: 66, compressionLevel: 3, scaleRatio: 1.0, alphaQuality: 82, preset: 'drawing', lossless: false, crThreshold: 30, crSize: 24 },
+    { quality: 58, compressionLevel: 3, scaleRatio: 1.0, alphaQuality: 74, preset: 'drawing', lossless: false, crThreshold: 38, crSize: 32 },
+    { quality: 50, compressionLevel: 3, scaleRatio: 1.0, alphaQuality: 66, preset: 'drawing', lossless: false, crThreshold: 46, crSize: 32 },
+    { quality: 44, compressionLevel: 2, scaleRatio: 1.0, alphaQuality: 58, preset: 'drawing', lossless: false, crThreshold: 56, crSize: 32 },
+    { quality: 38, compressionLevel: 2, scaleRatio: 1.0, alphaQuality: 50, preset: 'drawing', lossless: false, crThreshold: 64, crSize: 32 },
   ];
 
   const gifPlans = [
@@ -395,8 +417,15 @@ function getOneMbAttemptPlan(format, attemptIndex, metadata = {}, tier = 'standa
     format: 'webp',
     quality: plan.quality,
     compressionLevel: plan.compressionLevel,
-    width: toEvenNumber(Math.min(settings.resolution, width * plan.scaleRatio)),
-    height: toEvenNumber(Math.min(settings.resolution, height * plan.scaleRatio)),
+    // Preserve the original animation canvas in ONE MB mode.
+    // Size reduction should come from encoder tuning, not canvas shrink.
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height)),
+    alphaQuality: plan.alphaQuality,
+    preset: plan.preset,
+    lossless: plan.lossless,
+    crThreshold: plan.crThreshold,
+    crSize: plan.crSize,
     stripMetadata: true,
   };
 }

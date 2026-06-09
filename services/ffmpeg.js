@@ -3,12 +3,59 @@
  * Video/image processing using FFmpeg via child_process
  */
 
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const sharp = require('sharp');
+const ffmpegStatic = require('ffmpeg-static');
+const ffprobeStatic = require('ffprobe-static');
+let libwebpAnimCapabilities = null;
+
+function resolveFFmpegBinary() {
+  return process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg';
+}
+
+function resolveFFprobeBinary() {
+  return process.env.FFPROBE_PATH || ffprobeStatic.path || 'ffprobe';
+}
+
+function getLibwebpAnimCapabilities() {
+  if (libwebpAnimCapabilities) {
+    return libwebpAnimCapabilities;
+  }
+
+  try {
+    const ffmpegBinary = resolveFFmpegBinary();
+    const result = spawnSync(ffmpegBinary, ['-hide_banner', '-h', 'encoder=libwebp_anim'], {
+      encoding: 'utf8',
+    });
+    const helpText = `${result.stdout || ''}\n${result.stderr || ''}`;
+    const pixelFormatsLine = helpText.match(/Supported pixel formats:\s*(.+)/i)?.[1] || '';
+    const pixelFormats = pixelFormatsLine.trim().split(/\s+/).filter(Boolean);
+
+    libwebpAnimCapabilities = {
+      supportsAlphaQuality: /-alpha_quality\b/.test(helpText),
+      supportsCompressionLevel: /-compression_level\b/.test(helpText),
+      supportsPreset: /-preset\b/.test(helpText),
+      supportsCrThreshold: /-cr_threshold\b/.test(helpText),
+      supportsCrSize: /-cr_size\b/.test(helpText),
+      pixelFormats,
+    };
+  } catch (error) {
+    libwebpAnimCapabilities = {
+      supportsAlphaQuality: false,
+      supportsCompressionLevel: false,
+      supportsPreset: true,
+      supportsCrThreshold: false,
+      supportsCrSize: false,
+      pixelFormats: ['bgra', 'yuva420p'],
+    };
+  }
+
+  return libwebpAnimCapabilities;
+}
 
 /**
  * Execute an FFmpeg command and return a promise
@@ -17,7 +64,8 @@ const sharp = require('sharp');
  */
 function runFFmpeg(args, options = {}) {
   return new Promise((resolve, reject) => {
-    const proc = spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const ffmpegBinary = resolveFFmpegBinary();
+    const proc = spawn(ffmpegBinary, args, { stdio: ['pipe', 'pipe', 'pipe'] });
     let stderr = '';
     let stderrBuffer = '';
 
@@ -53,7 +101,7 @@ function runFFmpeg(args, options = {}) {
     });
 
     proc.on('error', (err) => {
-      reject(new Error(`FFmpeg not found. Please install FFmpeg: ${err.message}`));
+      reject(new Error(`FFmpeg not found at ${ffmpegBinary}: ${err.message}`));
     });
   });
 }
@@ -1068,11 +1116,22 @@ async function framesToWebPSequence(framesDir, prefix, outputPath, options = {})
   const width = options.width || null;
   const height = options.height || null;
   const stripMetadata = options.stripMetadata === true;
+  const lossless = options.lossless === true;
+  const alphaQuality = options.alphaQuality || 100;
+  const preset = options.preset || 'drawing';
+  const crThreshold = Number.isFinite(Number(options.crThreshold)) ? Number(options.crThreshold) : null;
+  const crSize = Number.isFinite(Number(options.crSize)) ? Number(options.crSize) : null;
 
   const inputPattern = path.join(framesDir, `${prefix}%04d.png`);
   const videoFilter = width && height
     ? `scale=${width}:${height}:flags=lanczos:force_original_aspect_ratio=decrease`
     : null;
+  const capabilities = getLibwebpAnimCapabilities();
+  const outputPixFmt = capabilities.pixelFormats.includes('bgra')
+    ? 'bgra'
+    : capabilities.pixelFormats.includes('yuva420p')
+      ? 'yuva420p'
+      : 'rgba';
 
   const args = [
     '-y',
@@ -1080,14 +1139,19 @@ async function framesToWebPSequence(framesDir, prefix, outputPath, options = {})
     '-framerate', String(fps),
     '-i', inputPattern,
     ...(videoFilter ? ['-vf', videoFilter] : []),
+    '-sws_flags', 'lanczos+accurate_rnd+full_chroma_int',
     '-vcodec', 'libwebp_anim',
-    '-lossless', '0',
-    '-compression_level', String(compressionLevel),
+    ...(capabilities.supportsPreset ? ['-preset', preset] : []),
+    ...(capabilities.supportsCrThreshold && crThreshold !== null ? ['-cr_threshold', String(crThreshold)] : []),
+    ...(capabilities.supportsCrSize && crSize !== null ? ['-cr_size', String(crSize)] : []),
+    '-lossless', lossless ? '1' : '0',
+    ...(capabilities.supportsCompressionLevel ? ['-compression_level', String(compressionLevel)] : []),
     '-quality', String(quality),
+    ...(capabilities.supportsAlphaQuality ? ['-alpha_quality', String(alphaQuality)] : []),
     '-loop', String(loop),
     '-an',
     ...(stripMetadata ? ['-map_metadata', '-1'] : []),
-    '-pix_fmt', 'rgba',
+    '-pix_fmt', outputPixFmt,
     outputPath,
   ];
 
@@ -1145,6 +1209,7 @@ async function framesToGIF(framesDir, prefix, outputPath, options = {}) {
  */
 async function getVideoInfo(inputPath) {
   return new Promise((resolve, reject) => {
+    const ffprobeBinary = resolveFFprobeBinary();
     const args = [
       '-v', 'quiet',
       '-print_format', 'json',
@@ -1153,7 +1218,7 @@ async function getVideoInfo(inputPath) {
       inputPath,
     ];
 
-    const proc = spawn('ffprobe', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn(ffprobeBinary, args, { stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
 
     proc.stdout.on('data', (data) => {
@@ -1191,6 +1256,7 @@ async function getVideoInfo(inputPath) {
  */
 async function getVideoFrameTimestamps(inputPath) {
   return new Promise((resolve) => {
+    const ffprobeBinary = resolveFFprobeBinary();
     const args = [
       '-v', 'error',
       '-select_streams', 'v:0',
@@ -1199,7 +1265,7 @@ async function getVideoFrameTimestamps(inputPath) {
       inputPath,
     ];
 
-    const proc = spawn('ffprobe', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn(ffprobeBinary, args, { stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
 
     proc.stdout.on('data', (data) => {

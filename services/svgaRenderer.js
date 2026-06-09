@@ -30,6 +30,22 @@ function toNodeBuffer(data) {
   return null;
 }
 
+function hasMeaningfulTransform(transform) {
+  if (!transform) return false;
+  const a = transform.a != null ? transform.a : 1;
+  const b = transform.b != null ? transform.b : 0;
+  const c = transform.c != null ? transform.c : 0;
+  const d = transform.d != null ? transform.d : 1;
+  const tx = transform.tx != null ? transform.tx : 0;
+  const ty = transform.ty != null ? transform.ty : 0;
+  return Math.abs(a - 1) > 0.001 ||
+    Math.abs(b) > 0.001 ||
+    Math.abs(c) > 0.001 ||
+    Math.abs(d - 1) > 0.001 ||
+    Math.abs(tx) > 0.001 ||
+    Math.abs(ty) > 0.001;
+}
+
 /**
  * Render a single SVGA frame with all sprites and transforms
  * @param {Object} frameData - Frame data with sprites and transforms
@@ -71,9 +87,13 @@ async function renderFrame(frameData, width, height) {
       // Apply alpha
       ctx.globalAlpha = sprite.alpha != null ? sprite.alpha : 1.0;
 
+      const usesTransformPlacement = hasMeaningfulTransform(sprite.transform);
+      const transform = sprite.transform || null;
+      const layout = sprite.layout || null;
+
       // Apply transform matrix if available
-      if (sprite.transform) {
-        const t = sprite.transform;
+      if (transform) {
+        const t = transform;
         // SVGA uses affine transform matrix: [a, b, c, d, tx, ty]
         // Use != null to preserve 0 values (|| treats 0 as falsy)
         ctx.transform(
@@ -86,13 +106,20 @@ async function renderFrame(frameData, width, height) {
         );
       }
 
-      // Apply layout (position and size) if available
-      let dx = 0, dy = 0, dw = img.width, dh = img.height;
-      if (sprite.layout) {
-        dx = sprite.layout.x != null ? sprite.layout.x : 0;
-        dy = sprite.layout.y != null ? sprite.layout.y : 0;
-        dw = sprite.layout.width != null ? sprite.layout.width : img.width;
-        dh = sprite.layout.height != null ? sprite.layout.height : img.height;
+      // Preserve explicit layout size even when a transform exists.
+      // For translated transforms, avoid double-applying layout x/y.
+      let dx = layout && layout.x != null ? layout.x : 0;
+      let dy = layout && layout.y != null ? layout.y : 0;
+      const dw = layout && layout.width != null ? layout.width : img.width;
+      const dh = layout && layout.height != null ? layout.height : img.height;
+
+      if (usesTransformPlacement && transform) {
+        const hasTransformTranslation = Math.abs(transform.tx != null ? transform.tx : 0) > 0.001 ||
+          Math.abs(transform.ty != null ? transform.ty : 0) > 0.001;
+        if (hasTransformTranslation) {
+          dx = 0;
+          dy = 0;
+        }
       }
 
       // Draw sprite

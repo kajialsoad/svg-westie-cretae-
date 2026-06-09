@@ -1,0 +1,78 @@
+# AnimSuite Pro — Media Conversion & Animation Platform
+
+
+## Secure Access
+Please enter your access token to use AnimSuite Pro.
+[AnimSuite Pro](https://valiant-smile-production.up.railway.app/health)
+[Home](https://valiant-smile-production.up.railway.app/health)
+[SVGA
+          Converter](https://valiant-smile-production.up.railway.app/health)
+[Video→SVGA](https://valiant-smile-production.up.railway.app/health)
+[PNG
+          Editor](https://valiant-smile-production.up.railway.app/health)
+
+# AnimSuite Pro
+Professional Media Conversion & Animation Platform
+Convert SVGA animations, process videos, and create stunning PNG animations — all locally, no cloud needed.
+
+### SVGA Converter
+Parse SVGA animations and convert to WebP, GIF or JSON format
+
+### Video → SVGA
+Extract frames, remove background, and build SVGA animation from video
+
+### PNG Animation
+Create stunning animations from PNG images with drag, resize, rotate & timeline
+
+### Recent Conversions
+
+## SVGA Converter
+Upload an SVGA animation file and convert it to WebP, GIF or JSON metadata
+Drag & drop your .svga file here
+or click to browse
+
+### Source Preview
+
+### Output Format
+
+### Output Size
+
+### ONE MB Compression
+Keep the selected format, then apply visual-safe smart compression to push output near 1 MB.
+Disabled. Standard size tier rules are active.
+Starting...
+
+### Converted Preview
+Standard conversion completed.
+
+## Video → SVGA
+Upload a video, remove background, and convert to SVGA animation
+Drag & drop your video here
+MP4, MOV • Max 10 seconds • Max 50MB
+
+### Source Preview
+
+### Remove Background?
+Yes = background removal engine ON, No = keep original video look. Both modes apply size optimization.
+
+#### Select Target Color
+
+### Output Size
+Policy: minimum 5MB, preferred 25-30MB, hard max 50MB.
+
+### Audio Settings
+Starting...
+
+### Converted Preview
+
+## PNG Animation Editor
+Upload PNG images, create animations with drag, resize, rotate & timeline
+
+### Layers
++ Add Image
+
+### Animation Effects
+
+### Settings
+
+### Export

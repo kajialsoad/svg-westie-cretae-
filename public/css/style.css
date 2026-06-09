@@ -803,6 +803,27 @@ body {
   color: var(--text-secondary);
 }
 
+.audio-preview-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 15, 25, 0.45);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.audio-preview-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.audio-preview-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 /* ===== PROGRESS ===== */
 /* JSON Viewer */
 .json-viewer {
@@ -899,6 +920,60 @@ body {
   width: auto;
   height: auto;
   object-fit: contain;
+}
+
+.player-canvas .media-preview-stage {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.player-canvas .media-preview-stage img,
+.player-canvas .media-preview-stage video,
+.player-canvas .media-preview-stage canvas {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-debug-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.preview-debug-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  padding: 12px;
+  text-align: left;
+}
+
+.preview-debug-card span {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.preview-debug-card strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.preview-debug-card strong.match-ok {
+  color: #4ade80;
+}
+
+.preview-debug-card strong.match-bad {
+  color: #fb7185;
 }
 
 .file-details {

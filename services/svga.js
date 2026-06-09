@@ -466,14 +466,15 @@ async function optimizeMovieDataForOneMb(movieData, options = {}) {
 
   const optimizedMovieData = cloneMovieData(movieData, optimizedUniqueImages);
   optimizedMovieData.sprites = (optimizedMovieData.sprites || []).map((sprite) => {
-    if (!sprite.imageKey) return sprite;
-
-    const hash = keyToHash.get(sprite.imageKey);
-    const canonicalKey = hash ? hashToCanonicalKey.get(hash) : sprite.imageKey;
+    const imageHash = sprite.imageKey ? keyToHash.get(sprite.imageKey) : null;
+    const matteHash = sprite.matteKey ? keyToHash.get(sprite.matteKey) : null;
+    const canonicalImageKey = imageHash ? hashToCanonicalKey.get(imageHash) : sprite.imageKey;
+    const canonicalMatteKey = matteHash ? hashToCanonicalKey.get(matteHash) : sprite.matteKey;
 
     return {
       ...sprite,
-      imageKey: canonicalKey || sprite.imageKey,
+      imageKey: canonicalImageKey || sprite.imageKey,
+      matteKey: canonicalMatteKey || sprite.matteKey,
     };
   });
 

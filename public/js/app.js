@@ -154,7 +154,7 @@ function showVideoPreview(file) {
 
   const url = URL.createObjectURL(file);
   playerCanvas.innerHTML = `
-    <video src="${url}" autoplay loop muted playsinline style="
+    <video src="${url}" controls playsinline preload="metadata" style="
       max-width: 100%;
       max-height: 100%;
       display: block;
@@ -162,6 +162,92 @@ function showVideoPreview(file) {
       object-fit: contain;
     "></video>
   `;
+}
+
+function renderVideoSvgaAudioPreview(jobId, hasAudio) {
+  const container = document.getElementById('video-converted-audio-preview');
+  if (!container) return;
+
+  if (!hasAudio) {
+    container.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+
+  const audioUrl = `/api/download/${jobId}?audio=1&t=${Date.now()}`;
+  container.style.display = 'block';
+  container.innerHTML = `
+    <div class="audio-preview-card">
+      <div class="audio-preview-label">Audio Preview</div>
+      <audio controls preload="metadata" src="${audioUrl}" style="width:100%;"></audio>
+      <div class="audio-preview-note">SVGA web preview animation আলাদা player-e চলে, তাই audio control এখানে দেওয়া হয়েছে.</div>
+    </div>
+  `;
+}
+
+function formatCanvasSize(width, height) {
+  const safeW = Number(width) || 0;
+  const safeH = Number(height) || 0;
+  return safeW > 0 && safeH > 0 ? `${safeW}×${safeH}` : 'Unknown';
+}
+
+function formatFpsValue(fps) {
+  const safe = Number(fps) || 0;
+  return safe > 0 ? `${safe.toFixed(safe % 1 === 0 ? 0 : 2)}` : 'Unknown';
+}
+
+function renderSvgaPreviewDebugInfo(data, actualWidth, actualHeight) {
+  const debugBox = document.getElementById('svga-preview-debug');
+  if (!debugBox) return;
+
+  const originalWidth = Number(data?.metadata?.width) || 0;
+  const originalHeight = Number(data?.metadata?.height) || 0;
+  const originalFps = Number(data?.metadata?.fps) || 0;
+  const convertedWidth = Number(data?.outputMetadata?.width) || Number(actualWidth) || 0;
+  const convertedHeight = Number(data?.outputMetadata?.height) || Number(actualHeight) || 0;
+  const convertedFps = Number(data?.outputMetadata?.fps) || originalFps || 0;
+  const canvasMatches = originalWidth > 0 && originalHeight > 0 &&
+    convertedWidth === originalWidth && convertedHeight === originalHeight;
+  const matchClass = canvasMatches ? 'match-ok' : 'match-bad';
+
+  debugBox.style.display = 'grid';
+  debugBox.innerHTML = `
+    <div class="preview-debug-card">
+      <span>Original Canvas</span>
+      <strong>${formatCanvasSize(originalWidth, originalHeight)}</strong>
+    </div>
+    <div class="preview-debug-card">
+      <span>Converted Canvas</span>
+      <strong>${formatCanvasSize(convertedWidth, convertedHeight)}</strong>
+    </div>
+    <div class="preview-debug-card">
+      <span>Original FPS</span>
+      <strong>${formatFpsValue(originalFps)}</strong>
+    </div>
+    <div class="preview-debug-card">
+      <span>Converted FPS</span>
+      <strong>${formatFpsValue(convertedFps)}</strong>
+    </div>
+    <div class="preview-debug-card">
+      <span>Canvas Match</span>
+      <strong class="${matchClass}">${canvasMatches ? 'YES' : 'MISMATCH'}</strong>
+    </div>
+  `;
+}
+
+function createMediaPreviewStage(sourceEl, metadata = {}) {
+  const width = Number(metadata.width) || Number(metadata.viewBoxWidth) || sourceEl.naturalWidth || 320;
+  const height = Number(metadata.height) || Number(metadata.viewBoxHeight) || sourceEl.naturalHeight || 320;
+  const stage = document.createElement('div');
+  stage.className = 'media-preview-stage';
+  stage.style.aspectRatio = `${width} / ${height}`;
+  stage.style.maxWidth = `${width}px`;
+  stage.style.maxHeight = '380px';
+  sourceEl.style.width = '100%';
+  sourceEl.style.height = '100%';
+  sourceEl.style.objectFit = 'contain';
+  stage.appendChild(sourceEl);
+  return stage;
 }
 
 // SVGA Preview is now handled by svga-preview.js
@@ -576,6 +662,7 @@ async function startConversion(module) {
         // Fallback to the static preview PNG only if animated fetch/render fails.
         if (convertedCanvas) {
           convertedCanvas.innerHTML = '';
+          convertedCanvas.style.aspectRatio = '';
 
           const outputUrl = `/api/download/${data.jobId}?t=${Date.now()}`;
           const previewUrl = `/api/download/${data.jobId}?preview=1&t=${Date.now()}`;
@@ -591,15 +678,11 @@ async function startConversion(module) {
             const img = document.createElement('img');
             img.src = outputObjectUrl;
             img.alt = `Converted ${format.toUpperCase()}`;
-            img.style.cssText = `
-              max-width: 100%;
-              max-height: 100%;
-              display: block;
-              margin: 0 auto;
-              object-fit: contain;
-            `;
 
             img.onload = function () {
+              convertedCanvas.innerHTML = '';
+              convertedCanvas.appendChild(createMediaPreviewStage(img, data.metadata || data.outputMetadata || {}));
+              renderSvgaPreviewDebugInfo(data, img.naturalWidth, img.naturalHeight);
               setTimeout(() => URL.revokeObjectURL(outputObjectUrl), 1000);
             };
 
@@ -617,8 +700,10 @@ async function startConversion(module) {
                 const fallbackImg = document.createElement('img');
                 fallbackImg.src = previewObjectUrl;
                 fallbackImg.alt = `Converted ${format.toUpperCase()} preview`;
-                fallbackImg.style.cssText = img.style.cssText;
                 fallbackImg.onload = function () {
+                  convertedCanvas.innerHTML = '';
+                  convertedCanvas.appendChild(createMediaPreviewStage(fallbackImg, data.metadata || data.outputMetadata || {}));
+                  renderSvgaPreviewDebugInfo(data, fallbackImg.naturalWidth, fallbackImg.naturalHeight);
                   setTimeout(() => URL.revokeObjectURL(previewObjectUrl), 1000);
                 };
                 fallbackImg.onerror = function () {
@@ -626,15 +711,12 @@ async function startConversion(module) {
                   convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
                 };
 
-                convertedCanvas.innerHTML = '';
-                convertedCanvas.appendChild(fallbackImg);
               } catch (fallbackErr) {
                 console.error('Preview fallback failed:', fallbackErr);
                 convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
               }
             };
 
-            convertedCanvas.appendChild(img);
           } catch (previewErr) {
             console.error('Preview fetch failed:', previewErr);
             try {
@@ -647,21 +729,16 @@ async function startConversion(module) {
               const img = document.createElement('img');
               img.src = previewObjectUrl;
               img.alt = `Converted ${format.toUpperCase()} preview`;
-              img.style.cssText = `
-                max-width: 100%;
-                max-height: 100%;
-                display: block;
-                margin: 0 auto;
-                object-fit: contain;
-              `;
               img.onload = function () {
+                convertedCanvas.innerHTML = '';
+                convertedCanvas.appendChild(createMediaPreviewStage(img, data.metadata || data.outputMetadata || {}));
+                renderSvgaPreviewDebugInfo(data, img.naturalWidth, img.naturalHeight);
                 setTimeout(() => URL.revokeObjectURL(previewObjectUrl), 1000);
               };
               img.onerror = function () {
                 URL.revokeObjectURL(previewObjectUrl);
                 convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
               };
-              convertedCanvas.appendChild(img);
             } catch (fallbackErr) {
               console.error('Preview fallback failed:', fallbackErr);
               convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
@@ -824,6 +901,10 @@ async function startConversion(module) {
             <span class="size-badge">${data.sizeMB} MB</span>
           `;
         }
+      }
+
+      if (module === 'video-svga') {
+        renderVideoSvgaAudioPreview(data.jobId, data.hasAudio === true);
       }
 
       // Download button — pre-fetch file as Blob so download works

@@ -101,7 +101,7 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
     const tier = req.body.sizeTier || 'standard';
     const oneMbMode = compression.isOneMbModeEnabled(req.body.oneMbMode);
     const tierSettings = compression.getTierSettings(tier);
-    const targetConfig = compression.getTargetConfig({ tier, oneMbMode });
+    const targetConfig = compression.getTargetConfig({ tier, oneMbMode, sourceSizeBytes: req.file.size });
 
     console.log('SVGA Conversion started:', {
       jobId,
@@ -170,6 +170,7 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
     // Step 3: Encode output
     let outputBuffer, filename, mimetype;
     let preview = null;
+    let outputMetadata = null;
     let compressionSummary = createCompressionSummary({
       inputSize: req.file.size,
       outputSize: req.file.size,
@@ -251,7 +252,9 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
           });
 
           const attempts = [];
-          const maxAttempts = 3;
+          const inputSize = req.file.size;
+          const isSmallSvgaInput = inputSize <= 4.5 * 1024 * 1024;
+          const maxAttempts = isSmallSvgaInput ? 5 : 3;
           let bestCandidate = null;
           let previousCandidate = null;
 
@@ -277,10 +280,7 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
               height: metadata.height,
             });
 
-            if (
-              !bestCandidate ||
-              Math.abs(candidate.size - targetConfig.targetBytes) < Math.abs(bestCandidate.size - targetConfig.targetBytes)
-            ) {
+            if (!bestCandidate || candidate.size < bestCandidate.size) {
               bestCandidate = candidate;
             }
 
@@ -294,7 +294,7 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
               break;
             }
 
-            if (previousCandidate) {
+            if (previousCandidate && !isSmallSvgaInput) {
               const improvementRatio = (previousCandidate.size - candidate.size) / Math.max(1, previousCandidate.size);
 
               if (attempt >= 2 && candidate.size > targetConfig.targetBytes * 8 && improvementRatio < 0.12) {
@@ -315,7 +315,12 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
             throw new Error('Unable to optimize SVGA output.');
           }
 
-          outputBuffer = bestCandidate.buffer;
+          if (bestCandidate.size < inputSize) {
+            outputBuffer = bestCandidate.buffer;
+          } else {
+            console.log(`[SVGA->SVGA] No meaningful reduction found. Keeping original file (${toFixedSafe(inputSize / (1024 * 1024), 2)} MB).`);
+            outputBuffer = req.file.buffer;
+          }
           filename = `converted_${Date.now()}.svga`;
           mimetype = 'application/x-svga';
           compressionSummary = createCompressionSummary({
@@ -336,16 +341,37 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
         });
 
         const attempts = [];
-        const maxAttempts = oneMbMode ? 6 : 1;
+        const maxAttempts = oneMbMode
+          ? (targetConfig.targetBytes <= 512 * 1024 ? 10 : 8)
+          : 1;
         let bestCandidate = null;
         let lastEncodeLogAt = 0;
+        const outputCeilingBytes = Number(targetConfig.outputCeilingBytes) || Infinity;
+        const baseWebpOptions = format === 'webp'
+          ? {
+            quality: format === 'webp' ? tierSettings.quality : null,
+            compressionLevel: tier === 'ultra' ? 6 : tier === 'high' ? 5 : 5,
+            lossless: tier === 'ultra',
+            alphaQuality: tier === 'ultra' ? 100 : tier === 'high' ? 100 : 96,
+            preset: 'drawing',
+          }
+          : null;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           const outputPath = path.join(tempDir, oneMbMode ? `output_attempt_${attempt}.${format}` : `output.${format}`);
           const plan = oneMbMode
-            ? compression.getOneMbAttemptPlan(format, attempt, metadata, tier)
+            ? compression.getOneMbAttemptPlan(format, attempt, metadata, tier, {
+              targetBytes: targetConfig.targetBytes,
+              sourceSizeBytes: req.file.size,
+            })
             : null;
           const fps = oneMbMode ? metadata.fps : Math.min(metadata.fps, tierSettings.fpsRange[1]);
+          const targetWidth = plan?.width && Number(plan.width) !== Number(metadata.width)
+            ? plan.width
+            : null;
+          const targetHeight = plan?.height && Number(plan.height) !== Number(metadata.height)
+            ? plan.height
+            : null;
 
           console.log(`Encoding ${format} attempt ${attempt}/${maxAttempts} with fps=${fps}...`, plan || {});
 
@@ -359,11 +385,16 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
           } else {
             await ffmpegService.framesToWebPSequence(framesDir, 'frame_', outputPath, {
               fps,
-              quality: plan?.quality || tierSettings.quality,
-              compressionLevel: plan?.compressionLevel || (oneMbMode ? 4 : 3),
-              width: plan?.width || null,
-              height: plan?.height || null,
+              quality: plan?.quality || baseWebpOptions?.quality || tierSettings.quality,
+              compressionLevel: plan?.compressionLevel || baseWebpOptions?.compressionLevel || (oneMbMode ? 4 : 3),
+              width: targetWidth,
+              height: targetHeight,
               stripMetadata: plan?.stripMetadata || false,
+              lossless: plan?.lossless ?? baseWebpOptions?.lossless ?? false,
+              alphaQuality: plan?.alphaQuality || baseWebpOptions?.alphaQuality || 100,
+              preset: plan?.preset || baseWebpOptions?.preset || 'drawing',
+              crThreshold: plan?.crThreshold ?? null,
+              crSize: plan?.crSize ?? null,
               onProgress: (progressInfo) => {
                 const now = Date.now();
                 if (now - lastEncodeLogAt < 1200) return;
@@ -409,9 +440,19 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
             height: plan?.height ?? null,
           });
 
+          const candidateWithinCeiling = candidate.size <= outputCeilingBytes;
+          const bestWithinCeiling = bestCandidate ? bestCandidate.size <= outputCeilingBytes : false;
           if (
             !bestCandidate ||
-            Math.abs(candidate.size - targetConfig.targetBytes) < Math.abs(bestCandidate.size - targetConfig.targetBytes)
+            (candidateWithinCeiling && !bestWithinCeiling) ||
+            (
+              candidateWithinCeiling === bestWithinCeiling &&
+              (
+                candidateWithinCeiling
+                  ? Math.abs(candidate.size - targetConfig.targetBytes) < Math.abs(bestCandidate.size - targetConfig.targetBytes)
+                  : candidate.size < bestCandidate.size
+              )
+            )
           ) {
             bestCandidate = candidate;
           }
@@ -436,6 +477,11 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
         outputBuffer = bestCandidate.buffer;
         filename = `converted_${Date.now()}.${format}`;
         mimetype = format === 'gif' ? 'image/gif' : 'image/webp';
+        try {
+          outputMetadata = await ffmpegService.getVideoInfo(bestCandidate.path);
+        } catch (probeErr) {
+          console.warn(`Failed to probe ${format.toUpperCase()} output metadata:`, probeErr.message);
+        }
         compressionSummary = createCompressionSummary({
           inputSize: req.file.size,
           outputSize: outputBuffer.length,
@@ -476,6 +522,7 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
         mimetype,
         size: outputBuffer.length,
         metadata,
+        outputMetadata,
         preview,
         compression: compressionSummary,
       },
@@ -498,6 +545,7 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
       sizeMB: toFixedSafe(outputBuffer.length / (1024 * 1024), 2),
       framesProcessed: renderResult.totalFrames,
       metadata,
+      outputMetadata,
       oneMbMode,
       compression: compressionSummary,
     });
@@ -559,7 +607,7 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
     const compParams = compression.getCompressionParams(tier, videoInfo.width, videoInfo.height, videoInfo.duration, videoInfo.fps);
     // Keep YES mode quality/compression behavior aligned with NO mode.
     const optimizationProfile = compression.getVideoOptimizationProfile(tier, false);
-    
+
     // Strict frame stability: always lock to source FPS.
     compParams.fps = videoInfo.fps;
 
@@ -814,6 +862,12 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
         filename,
         mimetype: 'application/x-svga',
         size: svgaBuffer.length,
+        audioPreview: audioBuffer ? {
+          buffer: audioBuffer,
+          filename: `audio_${Date.now()}.mp3`,
+          mimetype: 'audio/mpeg',
+          size: audioBuffer.length,
+        } : null,
         sizeInfo: {
           minBytes: sizeGovernance.minBytes,
           preferredMinBytes: sizeGovernance.preferredMinBytes,
@@ -833,6 +887,7 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
       removeBg,
       size: svgaBuffer.length,
       sizeMB: toFixedSafe(svgaBuffer.length / (1024 * 1024), 2),
+      hasAudio: !!audioBuffer,
       framesProcessed: finalFrames.length,
       sourceFrames: framePaths.length,
       optimizedFrames: selectedRawFramePaths.length,
@@ -975,7 +1030,7 @@ router.get('/status/:jobId', (req, res) => {
     result: job.result ? {
       filename: job.result.filename,
       size: job.result.size,
-        sizeMB: toFixedSafe(job.result.size / (1024 * 1024), 2),
+      sizeMB: toFixedSafe(job.result.size / (1024 * 1024), 2),
       metadata: job.result.metadata,
       sizeInfo: job.result.sizeInfo,
     } : null,
@@ -1009,9 +1064,12 @@ router.get('/download/:jobId', (req, res) => {
   });
 
   const isPreviewRequest = req.query.preview === '1';
-  const responsePayload = isPreviewRequest && job.result.preview
-    ? job.result.preview
-    : job.result;
+  const isAudioRequest = req.query.audio === '1';
+  const responsePayload = isAudioRequest && job.result.audioPreview
+    ? job.result.audioPreview
+    : isPreviewRequest && job.result.preview
+      ? job.result.preview
+      : job.result;
 
   res.setHeader('Content-Type', responsePayload.mimetype);
   res.setHeader('Access-Control-Allow-Origin', '*');
