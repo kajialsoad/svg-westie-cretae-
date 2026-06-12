@@ -253,17 +253,20 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
 
           const attempts = [];
           const inputSize = req.file.size;
-          const isSmallSvgaInput = inputSize <= 4.5 * 1024 * 1024;
-          const maxAttempts = isSmallSvgaInput ? 5 : 3;
+          const maxAttempts = 8;
           let bestCandidate = null;
           let previousCandidate = null;
 
           for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            const plan = compression.getOneMbAttemptPlan(format, attempt, metadata, tier);
+            const plan = compression.getOneMbAttemptPlan(format, attempt, metadata, tier, {
+              targetBytes: targetConfig.targetBytes,
+              sourceSizeBytes: req.file.size,
+            });
             console.log(`Encoding ${format} attempt ${attempt}/${maxAttempts}...`, plan || {});
 
-            const optimizedMovieData = await svgaService.optimizeMovieDataForOneMb(movieData, plan || {});
-            const candidateBuffer = await svgaService.encodeMovieData(optimizedMovieData, plan || {});
+            // Use direct protobuf-level optimization to preserve sprite structure exactly.
+            // The old toObject→create round-trip corrupted empty frame markers.
+            const candidateBuffer = await svgaService.optimizeSVGADirect(req.file.buffer, plan || {});
             const candidate = {
               attempt,
               buffer: candidateBuffer,
@@ -294,15 +297,15 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
               break;
             }
 
-            if (previousCandidate && !isSmallSvgaInput) {
+            if (previousCandidate) {
               const improvementRatio = (previousCandidate.size - candidate.size) / Math.max(1, previousCandidate.size);
 
-              if (attempt >= 2 && candidate.size > targetConfig.targetBytes * 8 && improvementRatio < 0.12) {
+              if (attempt >= 3 && candidate.size > targetConfig.targetBytes * 10 && improvementRatio < 0.08) {
                 console.log(`[SVGA->SVGA] Early stop after attempt ${attempt}: size is still far from 1MB and improvement dropped to ${(improvementRatio * 100).toFixed(1)}%`);
                 break;
               }
 
-              if (attempt >= 3 && improvementRatio < 0.04) {
+              if (attempt >= 4 && improvementRatio < 0.03) {
                 console.log(`[SVGA->SVGA] Early stop after attempt ${attempt}: compression plateau detected (${(improvementRatio * 100).toFixed(1)}% improvement)`);
                 break;
               }

@@ -43,7 +43,7 @@ async function parseSVGA(svgaBuffer) {
   const movieData = Movie.toObject(message, {
     bytes: Buffer,
     longs: Number,
-    enums: String,
+    enums: Number,
     defaults: true,
   });
 
@@ -371,6 +371,7 @@ async function optimizeMovieData(movieData, options = {}) {
 
     try {
       const optimizedBuffer = await sharp(sourceBuffer, { animated: false, failOn: 'none' })
+        .ensureAlpha()
         .png({
           palette: options.palette === true,
           colors: options.colors || 256,
@@ -401,87 +402,104 @@ async function optimizeMovieDataForOneMb(movieData, options = {}) {
   const startTime = Date.now();
   console.log('[ONE MB] Starting aggressive asset optimization...');
 
-  const imageHashes = new Map();
-  const keyToHash = new Map();
-  const hashToCanonicalKey = new Map();
+  const optimizedImages = {};
+  const useRgbaQuantize = options.rgbaQuantize === true;
+  const usePalette = !useRgbaQuantize && options.palette === true;
+  const quantizeColors = options.colors || 256;
+  const quantizeQuality = options.quality || 80;
+  const compressionLevel = options.compressionLevel || 9;
+  const scaleRatio = Number(options.scaleRatio) || 1.0;
+
+  const toEven = (val) => {
+    const r = Math.round(val);
+    return r % 2 === 0 ? r : Math.max(2, r - 1);
+  };
+
+  console.log(`[ONE MB] Optimization mode:`, {
+    mode: useRgbaQuantize ? 'rgba-quantize' : (usePalette ? 'palette' : 'lossless'),
+    colors: useRgbaQuantize ? quantizeColors : (usePalette ? quantizeColors : 'full'),
+    compressionLevel,
+    scaleRatio,
+  });
+
+  const totalImages = Object.keys(movieData.images || {}).length;
 
   for (const [key, rawBuffer] of Object.entries(movieData.images || {})) {
     const sourceBuffer = Buffer.from(rawBuffer);
-    const hashInput = Buffer.concat([
-      sourceBuffer.slice(0, Math.min(1024, sourceBuffer.length)),
-      Buffer.from(String(sourceBuffer.length))
-    ]);
-    const hash = crypto.createHash('sha256').update(hashInput).update(sourceBuffer).digest('hex');
-
-    keyToHash.set(key, hash);
-
-    if (!imageHashes.has(hash)) {
-      imageHashes.set(hash, { key, buffer: sourceBuffer, refs: 1 });
-      hashToCanonicalKey.set(hash, key);
-    } else {
-      imageHashes.get(hash).refs++;
-    }
-  }
-
-  const uniqueImages = imageHashes.size;
-  const totalImages = keyToHash.size;
-  console.log(`[ONE MB] Deduplication: ${uniqueImages} unique / ${totalImages} total images`);
-
-  const optimizedUniqueImages = {};
-  const paletteSettings = {
-    palette: true,
-    colors: options.colors || 128,
-    quality: options.quality || 85,
-    compressionLevel: options.compressionLevel || 9,
-    effort: Math.min(options.effort || 10, 8),
-    progressive: false,
-  };
-
-  console.log(`[ONE MB] Palette settings:`, {
-    colors: paletteSettings.colors,
-    quality: paletteSettings.quality,
-    compressionLevel: paletteSettings.compressionLevel
-  });
-
-  for (const [hash, { key, buffer: sourceBuffer }] of imageHashes) {
     try {
-      const optimizedBuffer = await sharp(sourceBuffer, { animated: false, failOn: 'none' })
-        .png(paletteSettings)
-        .toBuffer();
+      let sharpObj = sharp(sourceBuffer, { animated: false, failOn: 'none' });
+
+      if (scaleRatio < 0.99) {
+        const meta = await sharpObj.metadata();
+        const targetW = toEven(meta.width * scaleRatio);
+        const targetH = toEven(meta.height * scaleRatio);
+        sharpObj = sharpObj.resize(targetW, targetH, { fit: 'fill' });
+      }
+
+      let optimizedBuffer;
+
+      if (useRgbaQuantize) {
+        // RGBA-Quantize: two-pass approach for mobile-compatible compression.
+        // Pass 1: Quantize colors using palette mode (reduces unique pixel values)
+        const quantized = await sharpObj
+          .ensureAlpha()
+          .png({
+            palette: true,
+            colors: quantizeColors,
+            quality: quantizeQuality,
+            compressionLevel: 0,   // skip compression, we re-encode next
+            effort: 1,
+          })
+          .toBuffer();
+
+        // Pass 2: Re-encode as standard RGBA PNG (type 6) — universally compatible
+        optimizedBuffer = await sharp(quantized, { animated: false, failOn: 'none' })
+          .ensureAlpha()
+          .png({
+            palette: false,
+            compressionLevel,
+          })
+          .toBuffer();
+      } else if (usePalette) {
+        optimizedBuffer = await sharpObj
+          .ensureAlpha()
+          .png({
+            palette: true,
+            colors: quantizeColors,
+            quality: quantizeQuality,
+            compressionLevel,
+            effort: 8,
+            progressive: false,
+          })
+          .toBuffer();
+      } else {
+        optimizedBuffer = await sharpObj
+          .ensureAlpha()
+          .png({ palette: false, compressionLevel })
+          .toBuffer();
+      }
 
       const finalBuffer = optimizedBuffer.length < sourceBuffer.length * 0.97
         ? optimizedBuffer
         : sourceBuffer;
 
-      optimizedUniqueImages[key] = finalBuffer;
+      optimizedImages[key] = finalBuffer;
 
-      if (optimizedBuffer.length < sourceBuffer.length) {
-        console.log(`[ONE MB] Image ${key}: ${sourceBuffer.length} -> ${optimizedBuffer.length} bytes (${((optimizedBuffer.length / sourceBuffer.length) * 100).toFixed(1)}%)`);
+      if (finalBuffer.length < sourceBuffer.length) {
+        console.log(`[ONE MB] Image ${key}: ${sourceBuffer.length} -> ${finalBuffer.length} bytes (${((finalBuffer.length / sourceBuffer.length) * 100).toFixed(1)}%)`);
       }
     } catch (err) {
       console.warn(`[ONE MB] Failed to optimize image ${key}:`, err.message);
-      optimizedUniqueImages[key] = sourceBuffer;
+      optimizedImages[key] = sourceBuffer;
     }
   }
 
-  const optimizedMovieData = cloneMovieData(movieData, optimizedUniqueImages);
-  optimizedMovieData.sprites = (optimizedMovieData.sprites || []).map((sprite) => {
-    const imageHash = sprite.imageKey ? keyToHash.get(sprite.imageKey) : null;
-    const matteHash = sprite.matteKey ? keyToHash.get(sprite.matteKey) : null;
-    const canonicalImageKey = imageHash ? hashToCanonicalKey.get(imageHash) : sprite.imageKey;
-    const canonicalMatteKey = matteHash ? hashToCanonicalKey.get(matteHash) : sprite.matteKey;
-
-    return {
-      ...sprite,
-      imageKey: canonicalImageKey || sprite.imageKey,
-      matteKey: canonicalMatteKey || sprite.matteKey,
-    };
-  });
+  const optimizedMovieData = cloneMovieData(movieData, optimizedImages);
 
   const duration = Date.now() - startTime;
   console.log(`[ONE MB] Optimization complete in ${duration}ms:`);
-  console.log(`  - Images: ${totalImages} -> ${Object.keys(optimizedUniqueImages).length} (deduped unique assets)`);
-  console.log(`  - Palette: ${paletteSettings.colors} colors, quality ${paletteSettings.quality}`);
+  console.log(`  - Images: ${totalImages}`);
+  console.log(`  - Mode: ${useRgbaQuantize ? 'rgba-quantize' : (usePalette ? 'palette' : 'lossless')}`);
 
   return optimizedMovieData;
 }
@@ -505,6 +523,124 @@ async function optimizeAndEncodeMovieData(movieData, options = {}) {
   return encodeMovieData(optimizedMovieData, options);
 }
 
+/**
+ * Optimize SVGA file directly at the protobuf message level.
+ *
+ * This avoids the toObject() → create() round-trip which corrupts the wire
+ * format: `defaults: true` populates empty frames with default sub-messages
+ * (layout {x:0,y:0,w:0,h:0}, transform {a:0,b:0,c:0,d:0,tx:0,ty:0}).
+ * Native SVGA players interpret these as "render with zero scale" instead
+ * of "frame not present / invisible", breaking playback entirely.
+ *
+ * By modifying image buffers directly on the decoded protobuf Message
+ * and re-encoding from that same Message instance, ALL sprite, frame,
+ * shape, transform, clipPath, and matteKey data is preserved byte-for-byte.
+ *
+ * @param {Buffer} svgaBuffer - Original .svga file buffer
+ * @param {Object} options - Optimization options (rgbaQuantize, colors, quality, etc.)
+ * @returns {Buffer} - Optimized .svga file buffer
+ */
+async function optimizeSVGADirect(svgaBuffer, options = {}) {
+  const Movie = await loadProto();
+  const startTime = Date.now();
+
+  // Step 1: Decompress
+  let decompressed;
+  try {
+    decompressed = pako.inflate(new Uint8Array(svgaBuffer));
+  } catch (e) {
+    decompressed = new Uint8Array(svgaBuffer);
+  }
+
+  // Step 2: Decode to protobuf Message (NOT toObject — preserves wire structure)
+  const message = Movie.decode(decompressed);
+
+  // Step 3: Optimize image buffers in-place on the message
+  const useRgbaQuantize = options.rgbaQuantize === true;
+  const usePalette = !useRgbaQuantize && options.palette === true;
+  const quantizeColors = options.colors || 256;
+  const quantizeQuality = options.quality || 80;
+  const compressionLevel = options.compressionLevel || 9;
+
+  const imageKeys = message.images ? Object.keys(message.images) : [];
+  console.log(`[SVGA-Direct] Optimizing ${imageKeys.length} image(s)...`, {
+    mode: useRgbaQuantize ? 'rgba-quantize' : (usePalette ? 'palette' : 'lossless'),
+    colors: quantizeColors,
+    quality: quantizeQuality,
+  });
+
+  let optimizedCount = 0;
+
+  for (const key of imageKeys) {
+    const rawBuffer = message.images[key];
+    const sourceBuffer = Buffer.from(rawBuffer);
+
+    try {
+      let sharpObj = sharp(sourceBuffer, { animated: false, failOn: 'none' });
+      let optimizedBuffer;
+
+      if (useRgbaQuantize) {
+        // Pass 1: Quantize colors using palette mode
+        const quantized = await sharpObj
+          .ensureAlpha()
+          .png({
+            palette: true,
+            colors: quantizeColors,
+            quality: quantizeQuality,
+            compressionLevel: 0,
+            effort: 1,
+          })
+          .toBuffer();
+
+        // Pass 2: Re-encode as standard RGBA PNG (type 6)
+        optimizedBuffer = await sharp(quantized, { animated: false, failOn: 'none' })
+          .ensureAlpha()
+          .png({ palette: false, compressionLevel })
+          .toBuffer();
+      } else if (usePalette) {
+        optimizedBuffer = await sharpObj
+          .ensureAlpha()
+          .png({
+            palette: true,
+            colors: quantizeColors,
+            quality: quantizeQuality,
+            compressionLevel,
+            effort: 8,
+            progressive: false,
+          })
+          .toBuffer();
+      } else {
+        optimizedBuffer = await sharpObj
+          .ensureAlpha()
+          .png({ palette: false, compressionLevel })
+          .toBuffer();
+      }
+
+      // Only use optimized buffer if meaningfully smaller
+      if (optimizedBuffer.length < sourceBuffer.length * 0.97) {
+        message.images[key] = optimizedBuffer;
+        optimizedCount++;
+        console.log(`[SVGA-Direct] Image ${key}: ${sourceBuffer.length} -> ${optimizedBuffer.length} bytes (${((optimizedBuffer.length / sourceBuffer.length) * 100).toFixed(1)}%)`);
+      }
+    } catch (err) {
+      // Non-image buffers (e.g. audio data) — leave untouched
+      console.log(`[SVGA-Direct] Skipped non-image entry ${key}: ${err.message}`);
+    }
+  }
+
+  // Step 4: Re-encode directly from the modified message (preserves all structure)
+  const buffer = Movie.encode(message).finish();
+
+  // Step 5: Compress with zlib
+  const compressed = pako.deflate(buffer, { level: options.zlibLevel || 9 });
+  const result = Buffer.from(compressed);
+
+  const duration = Date.now() - startTime;
+  console.log(`[SVGA-Direct] Complete in ${duration}ms: ${optimizedCount}/${imageKeys.length} images optimized, ${svgaBuffer.length} -> ${result.length} bytes`);
+
+  return result;
+}
+
 module.exports = {
   parseSVGA,
   extractImages,
@@ -516,5 +652,6 @@ module.exports = {
   optimizeMovieData,
   optimizeAndEncodeMovieData,
   optimizeMovieDataForOneMb,
+  optimizeSVGADirect,
   loadProto,
 };

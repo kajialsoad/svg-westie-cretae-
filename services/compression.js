@@ -394,19 +394,26 @@ function getOneMbAttemptPlan(format, attemptIndex, metadata = {}, tier = 'standa
   }
 
   if (format === 'svga') {
+    // RGBA-quantize: reduce color count for smaller PNGs while keeping
+    // standard RGBA (type 6) format for maximum mobile compatibility.
+    // CRITICAL: Never resize images (scaleRatio must stay 1.0).
+    // Resizing images without updating sprite layouts causes dimension
+    // mismatches that break playback in external SVGA players.
+    // Size reduction comes only from color quantization + PNG compression.
     const svgaPlans = [
-      { palette: true, colors: 192, quality: 88, compressionLevel: 9, effort: 8, zlibLevel: 9 },
-      { palette: true, colors: 96, quality: 76, compressionLevel: 9, effort: 7, zlibLevel: 9 },
-      { palette: true, colors: 64, quality: 68, compressionLevel: 9, effort: 6, zlibLevel: 9 },
-      { palette: true, colors: 48, quality: 64, compressionLevel: 9, effort: 6, zlibLevel: 9 },
-      { palette: true, colors: 32, quality: 58, compressionLevel: 9, effort: 5, zlibLevel: 9 },
-      { palette: true, colors: 24, quality: 52, compressionLevel: 9, effort: 5, zlibLevel: 9 },
+      { rgbaQuantize: true, colors: 256, quality: 95, compressionLevel: 9, zlibLevel: 9 },
+      { rgbaQuantize: true, colors: 256, quality: 85, compressionLevel: 9, zlibLevel: 9 },
+      { rgbaQuantize: true, colors: 200, quality: 75, compressionLevel: 9, zlibLevel: 9 },
+      { rgbaQuantize: true, colors: 164, quality: 65, compressionLevel: 9, zlibLevel: 9 },
+      { rgbaQuantize: true, colors: 128, quality: 50, compressionLevel: 9, zlibLevel: 9 },
+      { rgbaQuantize: true, colors: 96,  quality: 35, compressionLevel: 9, zlibLevel: 9 },
+      { rgbaQuantize: true, colors: 64,  quality: 20, compressionLevel: 9, zlibLevel: 9 },
+      { rgbaQuantize: true, colors: 48,  quality: 12, compressionLevel: 9, zlibLevel: 9 },
     ];
-    const plan = svgaPlans[capped - 1];
+    const svgaCapped = Math.max(1, Math.min(svgaPlans.length, attemptIndex));
+    const plan = svgaPlans[svgaCapped - 1];
     return {
       format,
-      width: toEvenNumber(Math.min(settings.resolution, width)),
-      height: toEvenNumber(Math.min(settings.resolution, height)),
       stripMetadata: true,
       ...plan,
     };
