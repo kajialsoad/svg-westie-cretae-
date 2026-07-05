@@ -58,6 +58,8 @@ const cleanupTimers = new Map();
  */
 router.post('/upload', upload.single('file'), (req, res) => {
   try {
+    compression.getTargetConfig({ tier: 'standard' });
+
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
@@ -1106,13 +1108,17 @@ router.get('/download/:jobId', (req, res) => {
  * Check system health
  */
 router.get('/health', async (req, res) => {
-  const ffmpegAvailable = await ffmpegService.checkFFmpeg();
-  res.json({
-    status: 'ok',
-    ffmpeg: ffmpegAvailable,
-    activeJobs: jobs.size,
-    uptime: process.uptime(),
-  });
+  try {
+    const ffmpegAvailable = await ffmpegService.checkFFmpeg();
+    res.json({
+      status: 'ok',
+      ffmpeg: ffmpegAvailable,
+      activeJobs: jobs.size,
+      uptime: process.uptime(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

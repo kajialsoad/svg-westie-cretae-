@@ -33,3 +33,6 @@ tmp/
 # Output directories
 graphify-out/
 .vercel
+
+# Owner-only renewal tooling (never commit)
+aspro-keys/
