@@ -49,14 +49,27 @@ async function loadTokens() {
     const tbody = document.getElementById('tokens-list');
     tbody.innerHTML = '';
     
-    data.tokens.forEach(token => {
+    // Sort tokens by createdAt descending (newest first)
+    const sortedTokens = (data.tokens || []).sort((a, b) => {
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+    });
+    
+    sortedTokens.forEach(token => {
       const daysLeft = token.expiresAt 
         ? Math.max(0, Math.ceil((new Date(token.expiresAt) - new Date()) / (1000 * 60 * 60 * 24))) 
         : '∞';
       
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td style="font-family: monospace; font-size: 14px;">${token.token}</td>
+        <td style="font-family: monospace; font-size: 14px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span>${token.token}</span>
+            <button onclick="copyToClipboard('${token.token}', this)" style="background: transparent; border: none; padding: 2px 6px; cursor: pointer; color: var(--accent); font-size: 11px; display: inline-flex; align-items: center; gap: 4px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              Copy
+            </button>
+          </div>
+        </td>
         <td><span class="badge ${token.status}">${token.status.toUpperCase()}</span></td>
         <td>${new Date(token.createdAt).toLocaleDateString()}</td>
         <td>${token.expiresAt ? new Date(token.expiresAt).toLocaleDateString() : 'Never'}</td>
@@ -76,6 +89,20 @@ async function loadTokens() {
   } catch (err) {
     console.error(err);
   }
+}
+
+function copyToClipboard(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    const originalContent = btn.innerHTML;
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Copied!`;
+    btn.style.color = 'var(--success)';
+    setTimeout(() => {
+      btn.innerHTML = originalContent;
+      btn.style.color = 'var(--accent)';
+    }, 2000);
+  }).catch(err => {
+    console.error('Failed to copy: ', err);
+  });
 }
 
 async function changeExpiry(id) {
