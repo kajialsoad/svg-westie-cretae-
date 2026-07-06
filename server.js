@@ -111,7 +111,7 @@ app.get('*', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log('');
   console.log('╔══════════════════════════════════════════╗');
   console.log('║       🎬 AnimSuite Pro v1.0.0            ║');
@@ -122,5 +122,8 @@ app.listen(PORT, () => {
   console.log('╚══════════════════════════════════════════╝');
   console.log('');
 });
+
+// Set server timeout to 10 minutes for heavy video processing
+server.timeout = 600000;
 
 module.exports = app;
