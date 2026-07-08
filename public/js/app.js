@@ -185,6 +185,27 @@ function renderVideoSvgaAudioPreview(jobId, hasAudio) {
   `;
 }
 
+function renderSvgaAudioPreview(jobId, hasAudio) {
+  const container = document.getElementById('svga-converted-audio-preview');
+  if (!container) return;
+
+  if (!hasAudio) {
+    container.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+
+  const audioUrl = `/api/download/${jobId}?audio=1&t=${Date.now()}`;
+  container.style.display = 'block';
+  container.innerHTML = `
+    <div class="audio-preview-card">
+      <div class="audio-preview-label">Audio Preview</div>
+      <audio controls preload="metadata" src="${audioUrl}" style="width:100%;"></audio>
+      <div class="audio-preview-note">SVGA web preview animation আলাদা player-e চলে, তাই audio control এখানে দেওয়া হয়েছে.</div>
+    </div>
+  `;
+}
+
 function formatCanvasSize(width, height) {
   const safeW = Number(width) || 0;
   const safeH = Number(height) || 0;
@@ -277,6 +298,11 @@ function updateSvgaCompressionUI() {
       statusEl.textContent = `Enabled. Smart compression will preserve animation timing and keep ${format.toUpperCase()} output while pushing ${(file.size / (1024 * 1024)).toFixed(2)} MB toward ~1 MB.`;
     }
   }
+
+  const audioSelector = document.getElementById('svga-audio-selector');
+  if (audioSelector) {
+    audioSelector.style.display = format === 'svga' ? 'block' : 'none';
+  }
 }
 
 function renderSvgaCompressionResult(compressionData) {
@@ -366,6 +392,7 @@ function resetModule(module) {
     if (previewBox) previewBox.style.display = 'none';
     const summaryBox = document.getElementById('svga-compression-summary');
     if (summaryBox) summaryBox.style.display = 'none';
+    clearSvgaAudio();
     updateSvgaCompressionUI();
     // Player cleanup is handled by svga-preview.js
   } else if (module === 'video-svga') {
@@ -479,6 +506,12 @@ async function startConversion(module) {
         checkboxFound: !!oneMbCheckbox,
         checked: oneMbCheckbox?.checked,
       });
+
+      const audioInput = document.getElementById('svga-audio-input');
+      if (audioInput && audioInput.files && audioInput.files[0]) {
+        formData.append('audio', audioInput.files[0]);
+        console.log('Attaching audio to SVGA conversion:', audioInput.files[0].name);
+      }
     }
 
     if (module === 'video-svga') {
@@ -541,8 +574,11 @@ async function startConversion(module) {
       }, 100);
 
       const infoEl = document.getElementById(`${prefix}-result-info`);
-      if (module === 'svga-webp' && data.compression) {
-        renderSvgaCompressionResult(data.compression);
+      if (module === 'svga-webp') {
+        if (data.compression) {
+          renderSvgaCompressionResult(data.compression);
+        }
+        renderSvgaAudioPreview(data.jobId, data.hasAudio);
       }
       infoEl.innerHTML = `
         <strong>✅ Conversion Complete</strong><br>
@@ -1112,3 +1148,26 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('svga-one-mb-mode')?.addEventListener('change', updateSvgaCompressionUI);
   updateSvgaCompressionUI();
 });
+
+// ===== SVGA AUDIO HELPERS =====
+function handleSvgaAudioSelect(event) {
+  const file = event.target.files[0];
+  const nameEl = document.getElementById('svga-audio-name');
+  const clearBtn = document.getElementById('svga-audio-clear-btn');
+  if (file) {
+    nameEl.textContent = file.name + ' (' + (file.size / (1024 * 1024)).toFixed(2) + ' MB)';
+    if (clearBtn) clearBtn.style.display = 'inline-block';
+  } else {
+    if (nameEl) nameEl.textContent = 'No audio chosen';
+    if (clearBtn) clearBtn.style.display = 'none';
+  }
+}
+
+function clearSvgaAudio() {
+  const input = document.getElementById('svga-audio-input');
+  if (input) input.value = '';
+  const nameEl = document.getElementById('svga-audio-name');
+  const clearBtn = document.getElementById('svga-audio-clear-btn');
+  if (nameEl) nameEl.textContent = 'No audio chosen';
+  if (clearBtn) clearBtn.style.display = 'none';
+}

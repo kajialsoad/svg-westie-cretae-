@@ -152,9 +152,9 @@
 
   <script>
     // Configuration: Point to your backend API URL
-    // Automatically detects if running locally or on production
-    const API_BASE_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-      ? 'http://localhost:3000'
+    // Automatically detects if running locally (including local network IPs) or on production
+    const API_BASE_URL = window.location.port === '3001'
+      ? `${window.location.protocol}//${window.location.hostname}:3000`
       : window.location.origin;
     
     // Check API connection

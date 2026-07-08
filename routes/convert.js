@@ -90,12 +90,18 @@ router.post('/upload', upload.single('file'), (req, res) => {
  * POST /api/convert/svga
  * Convert SVGA animation to WebP, GIF, JSON, or SVGA
  */
-router.post('/convert/svga', upload.single('file'), async (req, res) => {
+router.post('/convert/svga', upload.fields([
+  { name: 'file', maxCount: 1 },
+  { name: 'audio', maxCount: 1 }
+]), async (req, res) => {
   const jobId = uuidv4();
   const tempDir = ffmpegService.createTempDir(jobId);
 
   try {
-    if (!req.file) {
+    const svgaFile = req.files && req.files['file'] ? req.files['file'][0] : null;
+    const audioFile = req.files && req.files['audio'] ? req.files['audio'][0] : null;
+
+    if (!svgaFile) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
@@ -103,16 +109,36 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
     const tier = req.body.sizeTier || 'standard';
     const oneMbMode = compression.isOneMbModeEnabled(req.body.oneMbMode);
     const tierSettings = compression.getTierSettings(tier);
-    const targetConfig = compression.getTargetConfig({ tier, oneMbMode, sourceSizeBytes: req.file.size });
+    const targetConfig = compression.getTargetConfig({ tier, oneMbMode, sourceSizeBytes: svgaFile.size });
+
+    // Handle optional audio file upload
+    let audioBuffer = null;
+    let audioDuration = 0;
+
+    if (audioFile) {
+      console.log('Audio file uploaded for SVGA embedding:', audioFile.originalname, audioFile.size);
+      audioBuffer = audioFile.buffer;
+      const tempAudioPath = path.join(tempDir, 'audio_upload' + path.extname(audioFile.originalname || '.mp3'));
+      fs.writeFileSync(tempAudioPath, audioBuffer);
+      
+      try {
+        const audioInfo = await ffmpegService.getVideoInfo(tempAudioPath);
+        audioDuration = audioInfo.duration;
+        console.log('Detected audio duration:', audioDuration, 'seconds');
+      } catch (audioErr) {
+        console.warn('Failed to parse audio duration via ffprobe:', audioErr.message);
+      }
+    }
 
     console.log('SVGA Conversion started:', {
       jobId,
-      filename: req.file.originalname,
-      size: req.file.size,
+      filename: svgaFile.originalname,
+      size: svgaFile.size,
       format,
       tier,
       rawOneMbMode: req.body.oneMbMode,
       oneMbMode,
+      hasAudio: !!audioBuffer,
     });
 
     // Update job status
@@ -125,7 +151,7 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
 
     // Step 1: Parse SVGA
     console.log('Step 1: Parsing SVGA...');
-    const movieData = await svgaService.parseSVGA(req.file.buffer);
+    const movieData = await svgaService.parseSVGA(svgaFile.buffer);
     const metadata = svgaService.getMetadata(movieData);
     console.log('SVGA Metadata:', metadata);
 
@@ -174,8 +200,8 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
     let preview = null;
     let outputMetadata = null;
     let compressionSummary = createCompressionSummary({
-      inputSize: req.file.size,
-      outputSize: req.file.size,
+      inputSize: svgaFile.size,
+      outputSize: svgaFile.size,
       targetConfig,
       attempts: [],
       oneMbMode,
@@ -224,17 +250,31 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
 
       if (format === 'svga') {
         if (!oneMbMode) {
-          jobs.set(jobId, {
-            ...jobs.get(jobId),
-            step: 'Preserving original SVGA animation...',
-            progress: 72
-          });
+          if (audioBuffer) {
+            jobs.set(jobId, {
+              ...jobs.get(jobId),
+              step: 'Embedding audio track into SVGA...',
+              progress: 72
+            });
 
-          outputBuffer = req.file.buffer;
+            outputBuffer = await svgaService.optimizeSVGADirect(svgaFile.buffer, {
+              skipImageOptimization: true,
+              audioBuffer,
+              audioDuration
+            });
+          } else {
+            jobs.set(jobId, {
+              ...jobs.get(jobId),
+              step: 'Preserving original SVGA animation...',
+              progress: 72
+            });
+            outputBuffer = svgaFile.buffer;
+          }
+
           filename = `converted_${Date.now()}.svga`;
           mimetype = 'application/x-svga';
           compressionSummary = createCompressionSummary({
-            inputSize: req.file.size,
+            inputSize: svgaFile.size,
             outputSize: outputBuffer.length,
             targetConfig,
             attempts: [{
@@ -254,7 +294,7 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
           });
 
           const attempts = [];
-          const inputSize = req.file.size;
+          const inputSize = svgaFile.size;
           const maxAttempts = 8;
           let bestCandidate = null;
           let previousCandidate = null;
@@ -262,13 +302,19 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
           for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             const plan = compression.getOneMbAttemptPlan(format, attempt, metadata, tier, {
               targetBytes: targetConfig.targetBytes,
-              sourceSizeBytes: req.file.size,
-            });
-            console.log(`Encoding ${format} attempt ${attempt}/${maxAttempts}...`, plan || {});
+              sourceSizeBytes: svgaFile.size,
+            }) || {};
+
+            if (audioBuffer && audioDuration) {
+              plan.audioBuffer = audioBuffer;
+              plan.audioDuration = audioDuration;
+            }
+
+            console.log(`Encoding ${format} attempt ${attempt}/${maxAttempts}...`, plan);
 
             // Use direct protobuf-level optimization to preserve sprite structure exactly.
             // The old toObject→create round-trip corrupted empty frame markers.
-            const candidateBuffer = await svgaService.optimizeSVGADirect(req.file.buffer, plan || {});
+            const candidateBuffer = await svgaService.optimizeSVGADirect(svgaFile.buffer, plan);
             const candidate = {
               attempt,
               buffer: candidateBuffer,
@@ -320,16 +366,16 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
             throw new Error('Unable to optimize SVGA output.');
           }
 
-          if (bestCandidate.size < inputSize) {
+          if (bestCandidate.size < inputSize || audioBuffer) {
             outputBuffer = bestCandidate.buffer;
           } else {
             console.log(`[SVGA->SVGA] No meaningful reduction found. Keeping original file (${toFixedSafe(inputSize / (1024 * 1024), 2)} MB).`);
-            outputBuffer = req.file.buffer;
+            outputBuffer = svgaFile.buffer;
           }
           filename = `converted_${Date.now()}.svga`;
           mimetype = 'application/x-svga';
           compressionSummary = createCompressionSummary({
-            inputSize: req.file.size,
+            inputSize: svgaFile.size,
             outputSize: outputBuffer.length,
             targetConfig,
             attempts,
@@ -488,7 +534,7 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
           console.warn(`Failed to probe ${format.toUpperCase()} output metadata:`, probeErr.message);
         }
         compressionSummary = createCompressionSummary({
-          inputSize: req.file.size,
+          inputSize: svgaFile.size,
           outputSize: outputBuffer.length,
           targetConfig,
           attempts,
@@ -499,7 +545,7 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
 
     if (format === 'json') {
       compressionSummary = createCompressionSummary({
-        inputSize: req.file.size,
+        inputSize: svgaFile.size,
         outputSize: outputBuffer.length,
         targetConfig,
         attempts: [{
@@ -530,6 +576,12 @@ router.post('/convert/svga', upload.single('file'), async (req, res) => {
         outputMetadata,
         preview,
         compression: compressionSummary,
+        audioPreview: audioBuffer ? {
+          buffer: audioBuffer,
+          filename: `audio_${Date.now()}.mp3`,
+          mimetype: 'audio/mpeg',
+          size: audioBuffer.length,
+        } : null,
       },
     });
 

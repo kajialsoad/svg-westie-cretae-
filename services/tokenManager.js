@@ -12,7 +12,19 @@ if (!fs.existsSync(dbPath)) {
 function getTokens() {
   try {
     const data = fs.readFileSync(dbPath, 'utf8');
-    return JSON.parse(data).tokens;
+    const tokens = JSON.parse(data).tokens;
+    let modified = false;
+    const now = new Date();
+    tokens.forEach(token => {
+      if (token.status === 'active' && token.expiresAt && new Date(token.expiresAt) < now) {
+        token.status = 'disabled';
+        modified = true;
+      }
+    });
+    if (modified) {
+      saveTokens(tokens);
+    }
+    return tokens;
   } catch (error) {
     return [];
   }

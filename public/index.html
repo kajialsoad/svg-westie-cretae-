@@ -247,6 +247,20 @@
           </div>
         </div>
 
+        <!-- Audio Embed Settings -->
+        <div class="audio-selector" id="svga-audio-selector" style="display:none; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px;">
+          <h3 class="section-title">Embed Audio / Ringtone (Optional)</h3>
+          <p class="upload-hint" style="margin-bottom: 8px;">Upload an audio file (MP3, WAV, etc.) to merge it into the output SVGA.</p>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <input type="file" id="svga-audio-input" accept="audio/*" style="display: none;" onchange="handleSvgaAudioSelect(event)">
+            <button class="secondary-btn" type="button" onclick="document.getElementById('svga-audio-input').click()" style="padding: 8px 16px; font-size: 13px; font-weight: 500;">
+              🎵 Choose Audio
+            </button>
+            <span id="svga-audio-name" style="font-size: 13px; color: var(--text-muted);">No audio chosen</span>
+            <button class="clear-history-btn" id="svga-audio-clear-btn" type="button" onclick="clearSvgaAudio()" style="display: none; padding: 4px 8px; font-size: 11px; margin-left: 10px;">Remove</button>
+          </div>
+        </div>
+
         <!-- Size Selection -->
         <div class="size-selector">
           <h3 class="section-title">Output Size</h3>
@@ -339,6 +353,7 @@
             <div id="svga-converted-canvas" class="player-canvas"></div>
             <div class="file-details" id="svga-converted-details"></div>
             <div class="preview-debug-grid" id="svga-preview-debug" style="display:none;"></div>
+            <div id="svga-converted-audio-preview" style="display:none; margin-top:12px;"></div>
           </div>
           <div class="json-viewer" id="svga-json-viewer" style="display:none;">
             <pre><code id="svga-json-content"></code></pre>

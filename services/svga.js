@@ -583,7 +583,7 @@ async function optimizeSVGADirect(svgaBuffer, options = {}) {
   // Step 2: Decode to protobuf Message (NOT toObject — preserves wire structure)
   const message = Movie.decode(decompressed);
 
-  // Step 3: Optimize image buffers in-place on the message
+  // Step 3: Optimize image buffers in-place on the message (if not skipped)
   const useRgbaQuantize = options.rgbaQuantize === true;
   const usePalette = !useRgbaQuantize && options.palette === true;
   const quantizeColors = options.colors || 256;
@@ -591,69 +591,92 @@ async function optimizeSVGADirect(svgaBuffer, options = {}) {
   const compressionLevel = options.compressionLevel || 9;
 
   const imageKeys = message.images ? Object.keys(message.images) : [];
-  console.log(`[SVGA-Direct] Optimizing ${imageKeys.length} image(s)...`, {
-    mode: useRgbaQuantize ? 'rgba-quantize' : (usePalette ? 'palette' : 'lossless'),
-    colors: quantizeColors,
-    quality: quantizeQuality,
-  });
-
   let optimizedCount = 0;
 
-  for (const key of imageKeys) {
-    const rawBuffer = message.images[key];
-    const sourceBuffer = Buffer.from(rawBuffer);
+  if (!options.skipImageOptimization) {
+    console.log(`[SVGA-Direct] Optimizing ${imageKeys.length} image(s)...`, {
+      mode: useRgbaQuantize ? 'rgba-quantize' : (usePalette ? 'palette' : 'lossless'),
+      colors: quantizeColors,
+      quality: quantizeQuality,
+    });
 
-    try {
-      let sharpObj = sharp(sourceBuffer, { animated: false, failOn: 'none' });
-      let optimizedBuffer;
+    for (const key of imageKeys) {
+      const rawBuffer = message.images[key];
+      const sourceBuffer = Buffer.from(rawBuffer);
 
-      if (useRgbaQuantize) {
-        // Pass 1: Quantize colors using palette mode
-        const quantized = await sharpObj
-          .ensureAlpha()
-          .png({
-            palette: true,
-            colors: quantizeColors,
-            quality: quantizeQuality,
-            compressionLevel: 0,
-            effort: 1,
-          })
-          .toBuffer();
+      try {
+        let sharpObj = sharp(sourceBuffer, { animated: false, failOn: 'none' });
+        let optimizedBuffer;
 
-        // Pass 2: Re-encode as standard RGBA PNG (type 6)
-        optimizedBuffer = await sharp(quantized, { animated: false, failOn: 'none' })
-          .ensureAlpha()
-          .png({ palette: false, compressionLevel })
-          .toBuffer();
-      } else if (usePalette) {
-        optimizedBuffer = await sharpObj
-          .ensureAlpha()
-          .png({
-            palette: true,
-            colors: quantizeColors,
-            quality: quantizeQuality,
-            compressionLevel,
-            effort: 8,
-            progressive: false,
-          })
-          .toBuffer();
-      } else {
-        optimizedBuffer = await sharpObj
-          .ensureAlpha()
-          .png({ palette: false, compressionLevel })
-          .toBuffer();
+        if (useRgbaQuantize) {
+          // Pass 1: Quantize colors using palette mode
+          const quantized = await sharpObj
+            .ensureAlpha()
+            .png({
+              palette: true,
+              colors: quantizeColors,
+              quality: quantizeQuality,
+              compressionLevel: 0,
+              effort: 1,
+            })
+            .toBuffer();
+
+          // Pass 2: Re-encode as standard RGBA PNG (type 6)
+          optimizedBuffer = await sharp(quantized, { animated: false, failOn: 'none' })
+            .ensureAlpha()
+            .png({ palette: false, compressionLevel })
+            .toBuffer();
+        } else if (usePalette) {
+          optimizedBuffer = await sharpObj
+            .ensureAlpha()
+            .png({
+              palette: true,
+              colors: quantizeColors,
+              quality: quantizeQuality,
+              compressionLevel,
+              effort: 8,
+              progressive: false,
+            })
+            .toBuffer();
+        } else {
+          optimizedBuffer = await sharpObj
+            .ensureAlpha()
+            .png({ palette: false, compressionLevel })
+            .toBuffer();
+        }
+
+        // Only use optimized buffer if meaningfully smaller
+        if (optimizedBuffer.length < sourceBuffer.length * 0.97) {
+          message.images[key] = optimizedBuffer;
+          optimizedCount++;
+          console.log(`[SVGA-Direct] Image ${key}: ${sourceBuffer.length} -> ${optimizedBuffer.length} bytes (${((optimizedBuffer.length / sourceBuffer.length) * 100).toFixed(1)}%)`);
+        }
+      } catch (err) {
+        // Non-image buffers (e.g. audio data) — leave untouched
+        console.log(`[SVGA-Direct] Skipped non-image entry ${key}: ${err.message}`);
       }
-
-      // Only use optimized buffer if meaningfully smaller
-      if (optimizedBuffer.length < sourceBuffer.length * 0.97) {
-        message.images[key] = optimizedBuffer;
-        optimizedCount++;
-        console.log(`[SVGA-Direct] Image ${key}: ${sourceBuffer.length} -> ${optimizedBuffer.length} bytes (${((optimizedBuffer.length / sourceBuffer.length) * 100).toFixed(1)}%)`);
-      }
-    } catch (err) {
-      // Non-image buffers (e.g. audio data) — leave untouched
-      console.log(`[SVGA-Direct] Skipped non-image entry ${key}: ${err.message}`);
     }
+  } else {
+    console.log(`[SVGA-Direct] Image optimization skipped. Only modifying metadata / audio.`);
+  }
+
+  // Step 3.5: Add audio if provided
+  if (options.audioBuffer && options.audioDuration) {
+    const audioKey = 'audio_track';
+    if (!message.images) {
+      message.images = {};
+    }
+    message.images[audioKey] = options.audioBuffer;
+    
+    // Clear out any existing audio tracks to avoid conflicts
+    message.audios = [{
+      audioKey: audioKey,
+      startFrame: 0,
+      endFrame: message.params?.frames || 100,
+      startTime: 0,
+      totalTime: Math.round(options.audioDuration * 1000), // ms
+    }];
+    console.log(`[SVGA-Direct] Embedded audio buffer (${options.audioBuffer.length} bytes) for ${options.audioDuration} seconds.`);
   }
 
   // Step 4: Re-encode directly from the modified message (preserves all structure)
