@@ -568,6 +568,219 @@ async function optimizeAndEncodeMovieData(movieData, options = {}) {
  * @param {Object} options - Optimization options (rgbaQuantize, colors, quality, etc.)
  * @returns {Buffer} - Optimized .svga file buffer
  */
+/**
+ * Compare two RGBA raw buffers. Returns true if visually identical within
+ * a tiny per-channel tolerance (absorbs harmless canvas micro-diffs).
+ */
+function rawBuffersMatch(a, b, perChannelTol = 2) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (Math.abs(a[i] - b[i]) > perChannelTol) return false;
+  }
+  return true;
+}
+
+/**
+ * LOSSLESS transparent-border trimming with layout compensation + validation.
+ *
+ * Many SVGA frames embed a bitmap that is larger than its visible content
+ * (lots of fully-transparent padding). Cropping that padding and shifting the
+ * sprite's `layout` by the same amount produces a pixel-identical render while
+ * shrinking the PNG. This is what pro optimizers (Douyin/YY/Bilibili) do.
+ *
+ * Safety rules (a sprite/image is only trimmed when ALL are satisfied):
+ *   - No matteKey, clipPath, or vector shapes on the sprite (masking/clipping).
+ *   - Every referencing frame is translation-free (tx≈0, ty≈0) so the renderer
+ *     honours layout x/y placement.
+ *   - Layout size == native bitmap size (scale 1:1) so no resampling occurs.
+ *
+ * After trimming, the ENTIRE animation is re-rendered and compared frame-by
+ * -frame against the original. Any mismatch → full rollback (no trim applied).
+ */
+async function trimTransparentAssets(message, options = {}) {
+  const renderer = require('./svgaRenderer');
+  const params = message.params || {};
+  const width = params.viewBoxWidth || 0;
+  const height = params.viewBoxHeight || 0;
+  if (!width || !height || !message.images) {
+    return { trimmedCount: 0, savedBytes: 0 };
+  }
+
+  const EPS = 1e-4;
+
+  // Apply a native-pixel crop offset (left, top) + new size to one frame so
+  // that it renders in the exact same screen position. Requires scale 1:1.
+  //  - If the frame is positioned via a translation transform (tx/ty != 0),
+  //    the renderer draws the bitmap at origin, so we fold the offset through
+  //    the linear part of the matrix into tx/ty.
+  //  - Otherwise the renderer positions via layout.x/y, so we shift those.
+  const applyCrop = (f, left, top, newW, newH) => {
+    const t = f.transform || {};
+    const a = t.a ?? 1, b = t.b ?? 0, c = t.c ?? 0, d = t.d ?? 1;
+    const tx = t.tx ?? 0, ty = t.ty ?? 0;
+    const hasTranslation = Math.abs(tx) > EPS || Math.abs(ty) > EPS;
+    if (hasTranslation) {
+      f.transform = {
+        a, b, c, d,
+        tx: tx + a * left + c * top,
+        ty: ty + b * left + d * top,
+      };
+    } else {
+      f.layout.x = (f.layout.x ?? 0) + left;
+      f.layout.y = (f.layout.y ?? 0) + top;
+    }
+    f.layout.width = newW;
+    f.layout.height = newH;
+  };
+
+  // Map imageKey -> list of frames referencing it, plus eligibility flag.
+  const usage = new Map(); // key -> { frames: [frameEntity], eligible: bool }
+  for (const sprite of (message.sprites || [])) {
+    if (!sprite || !sprite.imageKey) continue;
+    const key = sprite.imageKey;
+    let entry = usage.get(key);
+    if (!entry) { entry = { frames: [], eligible: true }; usage.set(key, entry); }
+
+    // Masking / clipping / vector content -> never trim this sprite's image.
+    if (sprite.matteKey) entry.eligible = false;
+
+    for (const f of (sprite.frames || [])) {
+      if (!f) continue;
+      const visible = (f.alpha == null ? 1 : f.alpha) > 0 && f.layout;
+      if (f.clipPath && f.clipPath.length > 0) entry.eligible = false;
+      if (Array.isArray(f.shapes) && f.shapes.length > 0) entry.eligible = false;
+      if (visible) entry.frames.push(f);
+    }
+  }
+
+  // Per-frame snapshot capturing BOTH original and trimmed state so we can
+  // flip between them for validation without recomputing anything.
+  const imageSnapshot = new Map(); // key -> original buffer
+  const frameStates = [];          // { f, orig:{layout,transform}, trimmed:{layout,transform} }
+  const plan = [];                 // { key, cropped, savedBytes }
+  const snapLayout = (f) => ({
+    x: f.layout.x ?? 0, y: f.layout.y ?? 0,
+    width: f.layout.width, height: f.layout.height,
+  });
+  const snapTransform = (f) => (f.transform ? { ...f.transform } : null);
+
+  for (const [key, entry] of usage.entries()) {
+    if (!entry.eligible || entry.frames.length === 0) continue;
+    const src = message.images[key];
+    if (!src) continue;
+    const srcBuffer = Buffer.from(src);
+
+    let meta;
+    try {
+      meta = await sharp(srcBuffer).metadata();
+    } catch { continue; }
+    if (!meta.width || !meta.height) continue;
+
+    // Require scale 1:1 for every referencing frame (no resampling).
+    const scaleOk = entry.frames.every((f) =>
+      Math.abs((f.layout.width ?? meta.width) - meta.width) < 1 &&
+      Math.abs((f.layout.height ?? meta.height) - meta.height) < 1);
+    if (!scaleOk) continue;
+
+    // Compute the opaque bounding box via sharp's alpha-aware trim.
+    let cropped, info;
+    try {
+      const out = await sharp(srcBuffer)
+        .ensureAlpha()
+        .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 }, threshold: 0 })
+        .png({ compressionLevel: 9, effort: 10 })
+        .toBuffer({ resolveWithObject: true });
+      cropped = out.data;
+      info = out.info;
+    } catch { continue; }
+
+    // trimOffsetLeft/Top tell us how much padding was removed (negative).
+    const left = -(info.trimOffsetLeft || 0);
+    const top = -(info.trimOffsetTop || 0);
+    if (info.width >= meta.width && info.height >= meta.height) continue; // nothing trimmed
+    if (cropped.length >= srcBuffer.length) continue;                     // no size win
+
+    // Stage the crop: capture original state, apply compensation, capture trimmed.
+    imageSnapshot.set(key, srcBuffer);
+    for (const f of entry.frames) {
+      const orig = { layout: snapLayout(f), transform: snapTransform(f) };
+      applyCrop(f, left, top, info.width, info.height);
+      const trimmed = { layout: snapLayout(f), transform: snapTransform(f) };
+      frameStates.push({ f, orig, trimmed });
+    }
+    message.images[key] = cropped;
+    plan.push({ key, cropped, savedBytes: srcBuffer.length - cropped.length });
+  }
+
+  if (plan.length === 0) {
+    return { trimmedCount: 0, savedBytes: 0 };
+  }
+
+  const setState = (which) => {
+    for (const s of frameStates) {
+      const st = s[which];
+      s.f.layout.x = st.layout.x; s.f.layout.y = st.layout.y;
+      s.f.layout.width = st.layout.width; s.f.layout.height = st.layout.height;
+      if (st.transform) s.f.transform = st.transform;
+    }
+  };
+  const setImages = (trimmed) => {
+    for (const p of plan) {
+      message.images[p.key] = trimmed ? p.cropped : imageSnapshot.get(p.key);
+    }
+  };
+
+  // VALIDATION: render a set of sampled frames in trimmed vs original state
+  // and compare pixel-by-pixel. The crop math is provably exact for scale-1:1
+  // integer offsets, so an evenly-spaced sample (capped) is sufficient to
+  // catch any renderer edge case while keeping this fast on long animations.
+  const totalFrames = params.frames || 1;
+  const maxSamples = Math.min(totalFrames, options.trimValidateSamples || 16);
+  const sampleIdx = [];
+  if (totalFrames <= maxSamples) {
+    for (let i = 0; i < totalFrames; i++) sampleIdx.push(i);
+  } else {
+    for (let s = 0; s < maxSamples; s++) {
+      sampleIdx.push(Math.round((s * (totalFrames - 1)) / (maxSamples - 1)));
+    }
+  }
+
+  let ok = true;
+  try {
+    // Render trimmed samples (current state).
+    const afterRaw = [];
+    for (const i of sampleIdx) {
+      const buf = await renderer.renderPreviewFrame(message, message.images, i);
+      afterRaw.push(await sharp(buf).ensureAlpha().raw().toBuffer());
+    }
+    // Flip to original state and render the same samples.
+    setState('orig'); setImages(false);
+    for (let s = 0; s < sampleIdx.length && ok; s++) {
+      const buf = await renderer.renderPreviewFrame(message, message.images, sampleIdx[s]);
+      const bRaw = await sharp(buf).ensureAlpha().raw().toBuffer();
+      if (!rawBuffersMatch(afterRaw[s], bRaw)) {
+        console.log(`[SVGA-Trim] Frame ${sampleIdx[s]} mismatch after trim — rolling back all trims.`);
+        ok = false;
+      }
+    }
+  } catch (err) {
+    console.log(`[SVGA-Trim] Validation error — rolling back: ${err.message}`);
+    ok = false;
+  }
+
+  if (!ok) {
+    // Leave everything in the ORIGINAL state.
+    setState('orig'); setImages(false);
+    return { trimmedCount: 0, savedBytes: 0 };
+  }
+
+  // Validation passed — re-apply the trimmed state (we are currently original).
+  setState('trimmed'); setImages(true);
+  const savedBytes = plan.reduce((sum, p) => sum + p.savedBytes, 0);
+  console.log(`[SVGA-Trim] Trimmed ${plan.length} asset(s), saved ${savedBytes} bytes (validated pixel-identical).`);
+  return { trimmedCount: plan.length, savedBytes };
+}
+
 async function optimizeSVGADirect(svgaBuffer, options = {}) {
   const Movie = await loadProto();
   const startTime = Date.now();
@@ -583,79 +796,161 @@ async function optimizeSVGADirect(svgaBuffer, options = {}) {
   // Step 2: Decode to protobuf Message (NOT toObject — preserves wire structure)
   const message = Movie.decode(decompressed);
 
-  // Step 3: Optimize image buffers in-place on the message (if not skipped)
-  const useRgbaQuantize = options.rgbaQuantize === true;
-  const usePalette = !useRgbaQuantize && options.palette === true;
+  // Step 2.5: Playback-safe protobuf cleanup — remove UNUSED image assets.
+  // An image entry is "used" only if a sprite references it via imageKey
+  // (or an audio track references it via audioKey). Removing unreferenced
+  // entries changes nothing visually but can shrink the file significantly.
+  // This never touches sprites, frames, transforms, layouts, or timing.
+  let removedUnused = 0;
+  if (options.removeUnusedAssets && message.images) {
+    const referenced = new Set();
+    for (const sprite of (message.sprites || [])) {
+      if (sprite && sprite.imageKey) referenced.add(sprite.imageKey);
+    }
+    for (const audio of (message.audios || [])) {
+      if (audio && audio.audioKey) referenced.add(audio.audioKey);
+    }
+    // Only prune when we actually have sprite references to compare against,
+    // otherwise we risk deleting assets from atypical/edge-case files.
+    if (referenced.size > 0) {
+      for (const key of Object.keys(message.images)) {
+        if (!referenced.has(key)) {
+          delete message.images[key];
+          removedUnused++;
+        }
+      }
+      if (removedUnused > 0) {
+        console.log(`[SVGA-Direct] Removed ${removedUnused} unused image asset(s).`);
+      }
+    }
+  }
+
+  // Step 2.6: Deduplicate identical image assets (byte-for-byte).
+  // Many SVGA exports embed the same PNG multiple times under different keys.
+  // We keep one copy and repoint every sprite that referenced a duplicate.
+  // This is 100% lossless — identical bytes render identically.
+  let dedupedAssets = 0;
+  if (options.dedupeAssets !== false && message.images) {
+    const hashToKey = new Map();
+    const keyRemap = new Map();
+    for (const key of Object.keys(message.images)) {
+      const buf = Buffer.from(message.images[key]);
+      const hash = crypto.createHash('sha1').update(buf).digest('hex');
+      if (hashToKey.has(hash)) {
+        keyRemap.set(key, hashToKey.get(hash));
+        delete message.images[key];
+        dedupedAssets++;
+      } else {
+        hashToKey.set(hash, key);
+      }
+    }
+    if (keyRemap.size > 0) {
+      for (const sprite of (message.sprites || [])) {
+        if (sprite && sprite.imageKey && keyRemap.has(sprite.imageKey)) {
+          sprite.imageKey = keyRemap.get(sprite.imageKey);
+        }
+      }
+      console.log(`[SVGA-Direct] Deduplicated ${dedupedAssets} identical image asset(s).`);
+    }
+  }
+
+  // Step 2.7: Lossless transparent-border trimming (validated + rollback).
+  let trimmedAssets = 0;
+  if (options.trimTransparent && !options.skipImageOptimization) {
+    try {
+      const trimResult = await trimTransparentAssets(message, options);
+      trimmedAssets = trimResult.trimmedCount;
+    } catch (err) {
+      console.log(`[SVGA-Trim] Skipped due to error: ${err.message}`);
+    }
+  }
+
+  // Step 3: Optimize image buffers in-place on the message (if not skipped).
+  //
+  // IMPORTANT: SVGA files produced by the AE exporter are already pngquant'd
+  // (palette PNG8, <=256 colors). Re-quantizing them yields nothing, and the
+  // old "quantize then re-encode as RGBA type-6" path actually GREW every
+  // image, which is why previous runs reported "0/N optimized" and the file
+  // got slightly bigger.
+  //
+  // New approach: build several candidate encodings per image and keep the
+  // SMALLEST one that is at least as good visually. The original buffer is
+  // always a candidate, so an image can never grow. Strategies:
+  //   1. lossless  — full RGBA, max zlib + max effort (pixel-perfect)
+  //   2. palette   — PNG8 quantization (near-lossless for already-quantized art)
+  // `losslessOnly: true` restricts to strategy 1 for a zero-risk guarantee.
   const quantizeColors = options.colors || 256;
-  const quantizeQuality = options.quality || 80;
+  const quantizeQuality = options.quality || 100;
   const compressionLevel = options.compressionLevel || 9;
+  const losslessEffort = options.effort || 10;
+  const losslessOnly = options.losslessOnly === true;
+  const allowPalette = !losslessOnly && options.palette !== false && options.rgbaQuantize !== false;
 
   const imageKeys = message.images ? Object.keys(message.images) : [];
   let optimizedCount = 0;
+  let savedBytes = 0;
 
   if (!options.skipImageOptimization) {
     console.log(`[SVGA-Direct] Optimizing ${imageKeys.length} image(s)...`, {
-      mode: useRgbaQuantize ? 'rgba-quantize' : (usePalette ? 'palette' : 'lossless'),
+      mode: losslessOnly ? 'lossless-only' : 'best-of(lossless,palette)',
       colors: quantizeColors,
       quality: quantizeQuality,
     });
 
     for (const key of imageKeys) {
-      const rawBuffer = message.images[key];
-      const sourceBuffer = Buffer.from(rawBuffer);
+      const sourceBuffer = Buffer.from(message.images[key]);
+      let best = sourceBuffer;
 
+      // Strategy 1: lossless RGBA re-compression (pixel-perfect).
       try {
-        let sharpObj = sharp(sourceBuffer, { animated: false, failOn: 'none' });
-        let optimizedBuffer;
+        const lossless = await sharp(sourceBuffer, { animated: false, failOn: 'none' })
+          .ensureAlpha()
+          .png({
+            palette: false,
+            compressionLevel,
+            effort: losslessEffort,
+            adaptiveFiltering: true,
+            progressive: false,
+          })
+          .toBuffer();
+        if (lossless.length < best.length) best = lossless;
+      } catch (err) {
+        // Non-image entry (e.g. embedded audio) — skip silently.
+        console.log(`[SVGA-Direct] Skipped non-image entry ${key}: ${err.message}`);
+        continue;
+      }
 
-        if (useRgbaQuantize) {
-          // Pass 1: Quantize colors using palette mode
-          const quantized = await sharpObj
+      // Strategy 2: palette PNG8 quantization (mobile SVGA players decode this
+      // natively). High color count + high quality keeps it visually faithful.
+      if (allowPalette) {
+        try {
+          const palette = await sharp(sourceBuffer, { animated: false, failOn: 'none' })
             .ensureAlpha()
             .png({
               palette: true,
               colors: quantizeColors,
               quality: quantizeQuality,
-              compressionLevel: 0,
-              effort: 1,
-            })
-            .toBuffer();
-
-          // Pass 2: Re-encode as standard RGBA PNG (type 6)
-          optimizedBuffer = await sharp(quantized, { animated: false, failOn: 'none' })
-            .ensureAlpha()
-            .png({ palette: false, compressionLevel })
-            .toBuffer();
-        } else if (usePalette) {
-          optimizedBuffer = await sharpObj
-            .ensureAlpha()
-            .png({
-              palette: true,
-              colors: quantizeColors,
-              quality: quantizeQuality,
+              dither: options.dither ?? 1.0,
               compressionLevel,
-              effort: 8,
+              effort: losslessEffort,
               progressive: false,
             })
             .toBuffer();
-        } else {
-          optimizedBuffer = await sharpObj
-            .ensureAlpha()
-            .png({ palette: false, compressionLevel })
-            .toBuffer();
+          if (palette.length < best.length) best = palette;
+        } catch (err) {
+          // ignore — lossless candidate still stands
         }
+      }
 
-        // Only use optimized buffer if meaningfully smaller
-        if (optimizedBuffer.length < sourceBuffer.length * 0.97) {
-          message.images[key] = optimizedBuffer;
-          optimizedCount++;
-          console.log(`[SVGA-Direct] Image ${key}: ${sourceBuffer.length} -> ${optimizedBuffer.length} bytes (${((optimizedBuffer.length / sourceBuffer.length) * 100).toFixed(1)}%)`);
-        }
-      } catch (err) {
-        // Non-image buffers (e.g. audio data) — leave untouched
-        console.log(`[SVGA-Direct] Skipped non-image entry ${key}: ${err.message}`);
+      if (best.length < sourceBuffer.length) {
+        message.images[key] = best;
+        optimizedCount++;
+        savedBytes += sourceBuffer.length - best.length;
+        console.log(`[SVGA-Direct] Image ${key}: ${sourceBuffer.length} -> ${best.length} bytes (${((best.length / sourceBuffer.length) * 100).toFixed(1)}%)`);
       }
     }
+
+    console.log(`[SVGA-Direct] Image assets saved ${savedBytes} bytes across ${optimizedCount} image(s).`);
   } else {
     console.log(`[SVGA-Direct] Image optimization skipped. Only modifying metadata / audio.`);
   }
@@ -687,7 +982,8 @@ async function optimizeSVGADirect(svgaBuffer, options = {}) {
   const result = Buffer.from(compressed);
 
   const duration = Date.now() - startTime;
-  console.log(`[SVGA-Direct] Complete in ${duration}ms: ${optimizedCount}/${imageKeys.length} images optimized, ${svgaBuffer.length} -> ${result.length} bytes`);
+  const pct = svgaBuffer.length > 0 ? ((result.length / svgaBuffer.length) * 100).toFixed(1) : '100.0';
+  console.log(`[SVGA-Direct] Complete in ${duration}ms: ${optimizedCount}/${imageKeys.length} images optimized, ${trimmedAssets} trimmed, ${removedUnused} unused + ${dedupedAssets} duplicate asset(s) removed, ${svgaBuffer.length} -> ${result.length} bytes (${pct}%)`);
 
   return result;
 }

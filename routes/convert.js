@@ -265,10 +265,34 @@ router.post('/convert/svga', upload.fields([
           } else {
             jobs.set(jobId, {
               ...jobs.get(jobId),
-              step: 'Preserving original SVGA animation...',
+              step: 'Compressing SVGA assets (playback-safe)...',
               progress: 72
             });
-            outputBuffer = svgaFile.buffer;
+
+            // Standard SVGA->SVGA: apply playback-safe asset optimization.
+            // Reduces embedded PNG size via RGBA color-quantization + max zlib,
+            // WITHOUT resizing (which would break sprite layouts / playback).
+            // Fall back to the original buffer if optimization doesn't help.
+            const optimized = await svgaService.optimizeSVGADirect(svgaFile.buffer, {
+              format: 'svga',
+              // Safe, quality-preserving asset optimization only:
+              //  - dedupe identical embedded PNGs and repoint sprites
+              //  - drop image assets no sprite/audio references
+              //  - best-of {lossless, palette} per image (never grows a frame)
+              //  - maximum zlib deflate on the container
+              removeUnusedAssets: true,
+              dedupeAssets: true,
+              trimTransparent: true,
+              colors: 256,
+              quality: 100,
+              compressionLevel: 9,
+              effort: 10,
+              zlibLevel: 9,
+              stripMetadata: true,
+            });
+            outputBuffer = optimized.length < svgaFile.buffer.length
+              ? optimized
+              : svgaFile.buffer;
           }
 
           filename = `converted_${Date.now()}.svga`;
@@ -299,11 +323,47 @@ router.post('/convert/svga', upload.fields([
           let bestCandidate = null;
           let previousCandidate = null;
 
+          // One-time structural pass (expensive but done ONCE): duplicate +
+          // unused asset removal and validated transparent-border trimming.
+          // These are lossless and independent of the palette color level, so
+          // running them per attempt would just repeat the same heavy work.
+          jobs.set(jobId, {
+            ...jobs.get(jobId),
+            step: 'Structural cleanup (dedupe + trim, validating)...',
+            progress: 58,
+          });
+          let structuralBuffer = svgaFile.buffer;
+          try {
+            structuralBuffer = await svgaService.optimizeSVGADirect(svgaFile.buffer, {
+              format: 'svga',
+              removeUnusedAssets: true,
+              dedupeAssets: true,
+              trimTransparent: true,
+              losslessOnly: true,
+              compressionLevel: 9,
+              effort: 10,
+              zlibLevel: 9,
+            });
+            if (structuralBuffer.length > svgaFile.buffer.length) {
+              structuralBuffer = svgaFile.buffer;
+            }
+          } catch (structErr) {
+            console.warn('[SVGA->SVGA] Structural pass failed, using original:', structErr.message);
+            structuralBuffer = svgaFile.buffer;
+          }
+          console.log(`[SVGA->SVGA] Structural pass: ${svgaFile.buffer.length} -> ${structuralBuffer.length} bytes`);
+
           for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             const plan = compression.getOneMbAttemptPlan(format, attempt, metadata, tier, {
               targetBytes: targetConfig.targetBytes,
               sourceSizeBytes: svgaFile.size,
             }) || {};
+
+            // Structural steps already done — palette attempts only re-encode
+            // image bytes. Disable the heavy passes for each attempt.
+            plan.trimTransparent = false;
+            plan.dedupeAssets = false;
+            plan.removeUnusedAssets = false;
 
             if (audioBuffer && audioDuration) {
               plan.audioBuffer = audioBuffer;
@@ -312,9 +372,8 @@ router.post('/convert/svga', upload.fields([
 
             console.log(`Encoding ${format} attempt ${attempt}/${maxAttempts}...`, plan);
 
-            // Use direct protobuf-level optimization to preserve sprite structure exactly.
-            // The old toObject→create round-trip corrupted empty frame markers.
-            const candidateBuffer = await svgaService.optimizeSVGADirect(svgaFile.buffer, plan);
+            // Run palette quantization on the structurally-optimized buffer.
+            const candidateBuffer = await svgaService.optimizeSVGADirect(structuralBuffer, plan);
             const candidate = {
               attempt,
               buffer: candidateBuffer,
@@ -413,7 +472,7 @@ router.post('/convert/svga', upload.fields([
           const plan = oneMbMode
             ? compression.getOneMbAttemptPlan(format, attempt, metadata, tier, {
               targetBytes: targetConfig.targetBytes,
-              sourceSizeBytes: req.file.size,
+              sourceSizeBytes: svgaFile.size,
             })
             : null;
           const fps = oneMbMode ? metadata.fps : Math.min(metadata.fps, tierSettings.fpsRange[1]);

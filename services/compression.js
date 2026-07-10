@@ -443,27 +443,34 @@ function getOneMbAttemptPlan(format, attemptIndex, metadata = {}, tier = 'standa
   }
 
   if (format === 'svga') {
-    // RGBA-quantize: reduce color count for smaller PNGs while keeping
-    // standard RGBA (type 6) format for maximum mobile compatibility.
-    // CRITICAL: Never resize images (scaleRatio must stay 1.0).
-    // Resizing images without updating sprite layouts causes dimension
-    // mismatches that break playback in external SVGA players.
-    // Size reduction comes only from color quantization + PNG compression.
+    // Palette PNG8 quantization drives per-frame size down; the optimizer
+    // keeps the SMALLEST of {original, lossless, palette}, so a frame can
+    // never grow. Combined with duplicate/unused asset removal + max zlib.
+    // CRITICAL: images are NEVER resized (no scaleRatio). Resizing without
+    // rewriting every sprite layout breaks playback in native SVGA players.
+    // Later attempts trade color count for size only when a smaller target
+    // is requested; earlier attempts stay visually faithful.
     const svgaPlans = [
-      { rgbaQuantize: true, colors: 256, quality: 95, compressionLevel: 9, zlibLevel: 9 },
-      { rgbaQuantize: true, colors: 256, quality: 85, compressionLevel: 9, zlibLevel: 9 },
-      { rgbaQuantize: true, colors: 200, quality: 75, compressionLevel: 9, zlibLevel: 9 },
-      { rgbaQuantize: true, colors: 164, quality: 65, compressionLevel: 9, zlibLevel: 9 },
-      { rgbaQuantize: true, colors: 128, quality: 50, compressionLevel: 9, zlibLevel: 9 },
-      { rgbaQuantize: true, colors: 96,  quality: 35, compressionLevel: 9, zlibLevel: 9 },
-      { rgbaQuantize: true, colors: 64,  quality: 20, compressionLevel: 9, zlibLevel: 9 },
-      { rgbaQuantize: true, colors: 48,  quality: 12, compressionLevel: 9, zlibLevel: 9 },
+      { colors: 256, quality: 100 },
+      { colors: 256, quality: 90 },
+      { colors: 200, quality: 80 },
+      { colors: 164, quality: 70 },
+      { colors: 128, quality: 55 },
+      { colors: 96,  quality: 40 },
+      { colors: 64,  quality: 25 },
+      { colors: 48,  quality: 15 },
     ];
     const svgaCapped = Math.max(1, Math.min(svgaPlans.length, attemptIndex));
     const plan = svgaPlans[svgaCapped - 1];
     return {
       format,
       stripMetadata: true,
+      removeUnusedAssets: true,
+      dedupeAssets: true,
+      trimTransparent: true,
+      compressionLevel: 9,
+      effort: 10,
+      zlibLevel: 9,
       ...plan,
     };
   }
