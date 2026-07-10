@@ -32,8 +32,18 @@ app.use((req, res, next) => {
   next();
 });
 
-// Default static serving for the main website
-app.use(express.static(path.join(__dirname, 'public')));
+// Default static serving for the main website.
+// Disable caching for HTML/JS/CSS so code updates are picked up immediately
+// (prevents the browser from running a stale app.js).
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: false,
+  lastModified: false,
+  setHeaders: (res, filePath) => {
+    if (/\.(js|css|html)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    }
+  },
+}));
 
 const tokenManager = require('./services/tokenManager');
 
@@ -90,6 +100,14 @@ const appTokenMiddleware = (req, res, next) => {
     return next();
   }
 
+  // Allow file downloads / previews / embedded audio by job id WITHOUT a header
+  // token. These are loaded via browser navigation, <img>, and <audio> element
+  // src — none of which can send an Authorization header, so they would 401.
+  // The job id is a hard-to-guess UUID and jobs are cleaned up shortly after.
+  if (req.path.startsWith('/download/') || req.path.startsWith('/api/download/')) {
+    return next();
+  }
+
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Access Denied. Missing Token.' });
@@ -107,6 +125,7 @@ app.use('/api', appTokenMiddleware, convertRoutes);
 
 // Catch-all: serve index.html for SPA routing
 app.get('*', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

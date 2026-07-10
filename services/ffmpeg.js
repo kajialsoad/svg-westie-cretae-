@@ -1310,6 +1310,11 @@ async function extractAudio(inputPath, outputPath, options = {}) {
     '-acodec', 'libmp3lame',
     '-ab', `${bitrate}k`,
     '-ar', '44100',
+    // svgaplayerweb detects audio by checking the bytes begin with "ID3"
+    // (base64 "SUQz"). Force an ID3v2 header so web/native SVGA players
+    // reliably recognise and play the embedded track.
+    '-write_id3v2', '1',
+    '-id3v2_version', '3',
     outputPath,
   ];
 

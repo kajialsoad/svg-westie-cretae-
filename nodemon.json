@@ -1,0 +1,14 @@
+{
+  "watch": ["server.js", "routes", "services", "proto"],
+  "ext": "js,json",
+  "ignore": [
+    "token-db.json",
+    "public/**",
+    "node_modules/**",
+    "graphify-out/**",
+    "admin-panel/**",
+    "SVGAConverter_AE/**",
+    "**/*.svga"
+  ],
+  "delay": 500
+}

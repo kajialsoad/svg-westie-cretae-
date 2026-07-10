@@ -880,7 +880,7 @@ body {
 .player-canvas {
   width: 100%;
   min-height: 300px;
-  max-height: 420px;
+  max-height: 640px;
   background: rgba(0, 0, 0, 0.2);
   border-radius: 8px;
   margin: 1rem 0;
@@ -899,7 +899,7 @@ body {
 
 .player-canvas canvas {
   max-width: 100%;
-  max-height: 380px;
+  max-height: 600px;
   width: auto;
   height: auto;
   display: block;
@@ -907,7 +907,7 @@ body {
 
 .player-canvas video {
   max-width: 100%;
-  max-height: 380px;
+  max-height: 600px;
   width: auto;
   height: auto;
   display: block;
@@ -916,7 +916,7 @@ body {
 
 .player-canvas img {
   max-width: 100%;
-  max-height: 380px;
+  max-height: 600px;
   width: auto;
   height: auto;
   object-fit: contain;
@@ -1758,4 +1758,72 @@ body {
 
 .custom-checkbox input:checked+.checkmark::after {
   display: block;
+}
+
+/* ===== SVGA preview player controls (YouTube-style) ===== */
+.svga-preview-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px auto 0;
+  padding: 8px 14px;
+  max-width: 420px;
+  background: rgba(15, 15, 20, 0.85);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+
+.svga-preview-controls .svga-ctrl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.svga-preview-controls .svga-ctrl-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.svga-preview-controls .svga-ctrl-btn:active {
+  transform: scale(0.92);
+}
+
+.svga-preview-controls .svga-vol-range {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  outline: none;
+  cursor: pointer;
+}
+
+.svga-preview-controls .svga-vol-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.svga-preview-controls .svga-vol-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
 }

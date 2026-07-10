@@ -282,11 +282,15 @@ router.post('/convert/svga', upload.fields([
               //  - maximum zlib deflate on the container
               removeUnusedAssets: true,
               dedupeAssets: true,
-              trimTransparent: true,
+              // trimTransparent disabled: it alters sprite layout/transform,
+              // which some native SVGA players render differently than our
+              // validator, shifting content to the top-left. Layout must stay
+              // byte-identical, so we only do asset-level optimization.
+              trimTransparent: false,
               colors: 256,
               quality: 100,
               compressionLevel: 9,
-              effort: 10,
+              effort: 4,
               zlibLevel: 9,
               stripMetadata: true,
             });
@@ -338,10 +342,10 @@ router.post('/convert/svga', upload.fields([
               format: 'svga',
               removeUnusedAssets: true,
               dedupeAssets: true,
-              trimTransparent: true,
+              trimTransparent: false,
               losslessOnly: true,
               compressionLevel: 9,
-              effort: 10,
+              effort: 4,
               zlibLevel: 9,
             });
             if (structuralBuffer.length > svgaFile.buffer.length) {
@@ -720,6 +724,16 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
       throw new Error('Video too long. Maximum 10 seconds allowed.');
     }
 
+    // SVGA stores fps as an INTEGER (protobuf int32). Source videos are often
+    // fractional (29.97, 23.976). If we extract at the fractional rate but
+    // encode a truncated integer fps, then frames/fps != real duration and the
+    // animation drifts faster/slower than the audio. Fix: pick ONE integer fps
+    // and use it for BOTH extraction and encoding so:
+    //   svga_duration = frameCount / fps  ==  real video duration.
+    videoInfo.fpsExact = videoInfo.fps;
+    videoInfo.fps = Math.max(1, Math.round(videoInfo.fps));
+    console.log('[Video->SVGA][FPS] source(exact):', videoInfo.fpsExact, '-> integer fps used:', videoInfo.fps);
+
     const compParams = compression.getCompressionParams(tier, videoInfo.width, videoInfo.height, videoInfo.duration, videoInfo.fps);
     // Keep YES mode quality/compression behavior aligned with NO mode.
     const optimizationProfile = compression.getVideoOptimizationProfile(tier, false);
@@ -882,7 +896,23 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
       if (finalFrames.length === 0) {
         throw new Error('No frames available after optimization.');
       }
-      const encodeFps = activeFps;
+
+      // Derive fps from the ACTUAL number of encoded frames and the REAL
+      // video duration. This guarantees:
+      //     svga_duration = frameCount / fps  ==  videoInfo.duration
+      // regardless of variable-frame-rate videos, misreported frame rates, or
+      // frame subsampling on size retries. Fixes the "6s video plays as 3s"
+      // (2x speed) bug that happens when the extracted frame count doesn't
+      // line up with duration × nominal_fps.
+      const realDuration = Math.max(0.04, Number(videoInfo.duration) || 0);
+      const encodeFps = Math.max(1, Math.round(finalFrames.length / realDuration));
+      console.log('[Video->SVGA][Timing]', {
+        frames: finalFrames.length,
+        realDuration: Number(realDuration.toFixed(3)),
+        nominalFps: activeFps,
+        derivedFps: encodeFps,
+        svgaDuration: Number((finalFrames.length / encodeFps).toFixed(3)),
+      });
 
       if (finalFrames.length > 0) {
         console.log('[Video->SVGA][Frames][EncodeInput]', {
@@ -966,6 +996,29 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
 
     jobs.set(jobId, { ...jobs.get(jobId), step: 'Finalizing...', progress: 90 });
 
+    // Lightweight static preview (first frame, downscaled). Used by the client
+    // when the SVGA is too large to load into the web player, so the preview
+    // never fails outright on big outputs.
+    let videoSvgaPreview = null;
+    try {
+      if (finalFrames[0] && finalFrames[0].imageBuffer) {
+        // Full-resolution first frame for a crisp HD static preview
+        // (only downscaled if larger than 1440px; small frames stay native).
+        const previewPng = await sharp(finalFrames[0].imageBuffer)
+          .resize(1440, 1440, { fit: 'inside', withoutEnlargement: true })
+          .png({ compressionLevel: 9 })
+          .toBuffer();
+        videoSvgaPreview = {
+          buffer: previewPng,
+          filename: `preview_${Date.now()}.png`,
+          mimetype: 'image/png',
+        };
+      }
+    } catch (previewErr) {
+      console.warn('[Video->SVGA] Failed to build static preview:', previewErr.message);
+    }
+    console.log('[Video->SVGA] static preview built:', !!videoSvgaPreview, videoSvgaPreview ? videoSvgaPreview.buffer.length + ' bytes' : '(none)');
+
     // Store result
     const filename = `animation_${Date.now()}.svga`;
     jobs.set(jobId, {
@@ -974,6 +1027,7 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
       step: 'Done!',
       progress: 100,
       result: {
+        preview: videoSvgaPreview,
         buffer: svgaBuffer,
         filename,
         mimetype: 'application/x-svga',
@@ -1004,6 +1058,11 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
       size: svgaBuffer.length,
       sizeMB: toFixedSafe(svgaBuffer.length / (1024 * 1024), 2),
       hasAudio: !!audioBuffer,
+      // Inline first-frame preview (base64) so the client can always show a
+      // preview without a second fetch (avoids job-cleanup / caching races).
+      previewDataUrl: videoSvgaPreview
+        ? `data:image/png;base64,${videoSvgaPreview.buffer.toString('base64')}`
+        : null,
       framesProcessed: finalFrames.length,
       sourceFrames: framePaths.length,
       optimizedFrames: selectedRawFramePaths.length,

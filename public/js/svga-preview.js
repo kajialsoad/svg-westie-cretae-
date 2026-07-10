@@ -79,7 +79,7 @@ async function showSVGAPreview(file) {
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
-    
+
     // Use ACTUAL SVGA size for display (no scaling)
     const dw = width;
     const dh = height;

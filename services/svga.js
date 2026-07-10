@@ -6,6 +6,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const crypto = require('crypto');
 const pako = require('pako');
 const protobuf = require('protobufjs');
@@ -688,7 +689,7 @@ async function trimTransparentAssets(message, options = {}) {
       const out = await sharp(srcBuffer)
         .ensureAlpha()
         .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 }, threshold: 0 })
-        .png({ compressionLevel: 9, effort: 10 })
+        .png({ compressionLevel: 9, effort: 4 })
         .toBuffer({ resolveWithObject: true });
       cropped = out.data;
       info = out.info;
@@ -735,7 +736,7 @@ async function trimTransparentAssets(message, options = {}) {
   // integer offsets, so an evenly-spaced sample (capped) is sufficient to
   // catch any renderer edge case while keeping this fast on long animations.
   const totalFrames = params.frames || 1;
-  const maxSamples = Math.min(totalFrames, options.trimValidateSamples || 16);
+  const maxSamples = Math.min(totalFrames, options.trimValidateSamples || 8);
   const sampleIdx = [];
   if (totalFrames <= maxSamples) {
     for (let i = 0; i < totalFrames; i++) sampleIdx.push(i);
@@ -882,7 +883,10 @@ async function optimizeSVGADirect(svgaBuffer, options = {}) {
   const quantizeColors = options.colors || 256;
   const quantizeQuality = options.quality || 100;
   const compressionLevel = options.compressionLevel || 9;
-  const losslessEffort = options.effort || 10;
+  // PNG `effort` 1-10 controls how hard sharp searches filters/zlib. Level 10
+  // is near-zopfli and MASSIVELY slower for ~2-3% extra shrink. Default to a
+  // fast, high-quality value; callers can override.
+  const losslessEffort = Math.min(10, Math.max(1, options.effort || 4));
   const losslessOnly = options.losslessOnly === true;
   const allowPalette = !losslessOnly && options.palette !== false && options.rgbaQuantize !== false;
 
@@ -895,9 +899,11 @@ async function optimizeSVGADirect(svgaBuffer, options = {}) {
       mode: losslessOnly ? 'lossless-only' : 'best-of(lossless,palette)',
       colors: quantizeColors,
       quality: quantizeQuality,
+      effort: losslessEffort,
     });
 
-    for (const key of imageKeys) {
+    // Optimize ONE image: returns the smallest of {original, lossless, palette}.
+    const optimizeOne = async (key) => {
       const sourceBuffer = Buffer.from(message.images[key]);
       let best = sourceBuffer;
 
@@ -905,19 +911,12 @@ async function optimizeSVGADirect(svgaBuffer, options = {}) {
       try {
         const lossless = await sharp(sourceBuffer, { animated: false, failOn: 'none' })
           .ensureAlpha()
-          .png({
-            palette: false,
-            compressionLevel,
-            effort: losslessEffort,
-            adaptiveFiltering: true,
-            progressive: false,
-          })
+          .png({ palette: false, compressionLevel, effort: losslessEffort, adaptiveFiltering: true, progressive: false })
           .toBuffer();
         if (lossless.length < best.length) best = lossless;
       } catch (err) {
-        // Non-image entry (e.g. embedded audio) — skip silently.
-        console.log(`[SVGA-Direct] Skipped non-image entry ${key}: ${err.message}`);
-        continue;
+        // Non-image entry (e.g. embedded audio) — leave untouched.
+        return { key, skipped: true };
       }
 
       // Strategy 2: palette PNG8 quantization (mobile SVGA players decode this
@@ -926,29 +925,31 @@ async function optimizeSVGADirect(svgaBuffer, options = {}) {
         try {
           const palette = await sharp(sourceBuffer, { animated: false, failOn: 'none' })
             .ensureAlpha()
-            .png({
-              palette: true,
-              colors: quantizeColors,
-              quality: quantizeQuality,
-              dither: options.dither ?? 1.0,
-              compressionLevel,
-              effort: losslessEffort,
-              progressive: false,
-            })
+            .png({ palette: true, colors: quantizeColors, quality: quantizeQuality, dither: options.dither ?? 1.0, compressionLevel, effort: losslessEffort, progressive: false })
             .toBuffer();
           if (palette.length < best.length) best = palette;
-        } catch (err) {
-          // ignore — lossless candidate still stands
-        }
+        } catch (err) { /* lossless candidate still stands */ }
       }
 
-      if (best.length < sourceBuffer.length) {
-        message.images[key] = best;
-        optimizedCount++;
-        savedBytes += sourceBuffer.length - best.length;
-        console.log(`[SVGA-Direct] Image ${key}: ${sourceBuffer.length} -> ${best.length} bytes (${((best.length / sourceBuffer.length) * 100).toFixed(1)}%)`);
+      return { key, best, sourceLen: sourceBuffer.length };
+    };
+
+    // Run in parallel with a bounded concurrency so sharp saturates the CPU
+    // threadpool instead of encoding one image at a time (the main slowdown).
+    const concurrency = Math.max(2, Math.min(8, os.cpus().length || 4));
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < imageKeys.length) {
+        const key = imageKeys[cursor++];
+        const res = await optimizeOne(key);
+        if (res && !res.skipped && res.best.length < res.sourceLen) {
+          message.images[key] = res.best;
+          optimizedCount++;
+          savedBytes += res.sourceLen - res.best.length;
+        }
       }
-    }
+    };
+    await Promise.all(Array.from({ length: concurrency }, worker));
 
     console.log(`[SVGA-Direct] Image assets saved ${savedBytes} bytes across ${optimizedCount} image(s).`);
   } else {

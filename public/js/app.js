@@ -185,6 +185,142 @@ function renderVideoSvgaAudioPreview(jobId, hasAudio) {
   `;
 }
 
+/**
+ * Attach a YouTube-style control bar (play/pause + volume) to an SVGA preview.
+ * Drives the SVGA.Player visuals AND a synced <audio> track together so the
+ * animation and sound play/pause as one. Survives player re-mounts via
+ * bindPlayer().
+ *
+ * @param {HTMLElement} hostEl - element that CONTAINS the <canvas> (control bar
+ *   is inserted as its sibling so canvas.innerHTML resets don't remove it)
+ * @param {Object} player - initial SVGA.Player instance
+ * @param {string|null} audioUrl - URL of the embedded audio track, or null
+ * @returns {{ bindPlayer: Function, destroy: Function }}
+ */
+/**
+ * Render a lightweight STATIC preview (server-generated first-frame PNG) when
+ * the SVGA is too large / fails to load in the web player. Keeps the preview
+ * area useful instead of showing a hard error.
+ */
+function showStaticSvgaFallback(hostEl, jobId, sizeMB, isRemoving, inlineSrc) {
+  if (!hostEl) return;
+  // Remove any leftover animated-player control bar sibling.
+  const parent = hostEl.parentElement;
+  if (parent) parent.querySelectorAll('.svga-preview-controls').forEach((el) => el.remove());
+  hostEl.innerHTML = '';
+  if (isRemoving) {
+    hostEl.classList.add('checkerboard-bg');
+    hostEl.classList.remove('opaque-preview');
+  } else {
+    hostEl.classList.remove('checkerboard-bg');
+    hostEl.classList.add('opaque-preview');
+  }
+  const img = document.createElement('img');
+  img.alt = 'Converted SVGA first-frame preview';
+  img.style.cssText = 'max-width:100%;max-height:380px;display:block;margin:0 auto;';
+  img.onload = () => {
+    const note = document.createElement('div');
+    note.style.cssText = 'color:#9aa;font-size:12px;text-align:center;margin-top:8px;';
+    note.textContent = sizeMB
+      ? `Large file (${sizeMB} MB): showing first-frame preview. Download to view the full animation.`
+      : 'Showing first-frame preview. Download to view the full animation.';
+    hostEl.appendChild(note);
+  };
+  img.onerror = () => {
+    hostEl.innerHTML = '<div style="color:#888;padding:2rem;">Preview unavailable — please download the file.</div>';
+  };
+  // Prefer the inline base64 preview (no network fetch, no cleanup race);
+  // fall back to the server endpoint only if not provided.
+  img.src = inlineSrc || `/api/download/${jobId}?preview=1&t=${Date.now()}`;
+  hostEl.appendChild(img);
+}
+
+function attachSvgaPreviewControls(hostEl, player, hasAudio) {
+  if (!hostEl) return { bindPlayer() {}, destroy() {} };
+  const parent = hostEl.parentElement || hostEl;
+
+  // Remove any previous control bar for this preview.
+  parent.querySelectorAll('.svga-preview-controls').forEach((el) => el.remove());
+
+  const H = window.Howler || null; // svgaplayerweb plays embedded audio via Howler
+
+  const PLAY = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+  const PAUSE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+  const VOL = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 00-2.5-4.03v8.06A4.5 4.5 0 0016.5 12z"/></svg>';
+  const MUTE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.59 3l2.7-2.7-1.41-1.41L15.17 10.6 12.46 7.9 11.05 9.3 13.76 12l-2.71 2.7 1.41 1.41 2.71-2.7 2.71 2.7 1.41-1.41z"/></svg>';
+
+  const showAudio = hasAudio && !!H;
+  const bar = document.createElement('div');
+  bar.className = 'svga-preview-controls';
+  bar.innerHTML = `
+    <button type="button" class="svga-ctrl-btn js-svga-pp" aria-label="Play/Pause">${PAUSE}</button>
+    <button type="button" class="svga-ctrl-btn js-svga-mute" aria-label="Mute" ${showAudio ? '' : 'style="display:none"'}>${VOL}</button>
+    <input type="range" class="svga-vol-range" min="0" max="100" value="100" ${showAudio ? '' : 'style="display:none"'} aria-label="Volume">
+  `;
+  hostEl.insertAdjacentElement('afterend', bar);
+
+  const ppBtn = bar.querySelector('.js-svga-pp');
+  const muteBtn = bar.querySelector('.js-svga-mute');
+  const volRange = bar.querySelector('.svga-vol-range');
+
+  const state = { player, playing: true, userMuted: false, volume: 1 };
+
+  // The SVGA player plays audio itself (via Howler) in perfect sync with the
+  // animation. We control it globally through Howler: volume + a "mute while
+  // paused" proxy so sound stops when the animation is paused.
+  const applyAudio = () => {
+    if (!H) return;
+    try {
+      H.volume(state.volume);
+      H.mute(state.userMuted || !state.playing || state.volume === 0);
+    } catch (e) {}
+    muteBtn.innerHTML = (state.userMuted || state.volume === 0) ? MUTE : VOL;
+  };
+
+  const play = () => {
+    state.playing = true;
+    ppBtn.innerHTML = PAUSE;
+    try { state.player && state.player.startAnimation(); } catch (e) {}
+    applyAudio();
+  };
+  const pause = () => {
+    state.playing = false;
+    ppBtn.innerHTML = PLAY;
+    try { state.player && state.player.pauseAnimation(); } catch (e) {}
+    applyAudio();
+  };
+
+  ppBtn.addEventListener('click', () => (state.playing ? pause() : play()));
+
+  if (showAudio) {
+    volRange.addEventListener('input', () => {
+      state.volume = (parseInt(volRange.value, 10) || 0) / 100;
+      state.userMuted = false;
+      applyAudio();
+    });
+    muteBtn.addEventListener('click', () => {
+      state.userMuted = !state.userMuted;
+      applyAudio();
+    });
+  }
+
+  // Initialise: unmuted, full volume, playing. Browsers block audio until the
+  // first user gesture; Howler auto-unlocks on the first click, so sound
+  // starts as soon as the user interacts with the page/controls.
+  applyAudio();
+
+  return {
+    bindPlayer(newPlayer) {
+      state.player = newPlayer;
+      if (state.playing) { try { newPlayer.startAnimation(); } catch (e) {} }
+      applyAudio();
+    },
+    destroy() {
+      bar.remove();
+    },
+  };
+}
+
 function renderSvgaAudioPreview(jobId, hasAudio) {
   const container = document.getElementById('svga-converted-audio-preview');
   if (!container) return;
@@ -669,6 +805,9 @@ async function startConversion(module) {
               player.setVideoItem(videoItem);
               player.startAnimation();
 
+              // YouTube-style play/pause + volume controls (audio via Howler).
+              attachSvgaPreviewControls(convertedCanvas, player, data.hasAudio === true);
+
               if (outputObjectUrl) {
                 URL.revokeObjectURL(outputObjectUrl);
               }
@@ -801,7 +940,9 @@ async function startConversion(module) {
           const svgaReady = await ensureSVGALibraryLoaded();
           if (svgaReady && typeof SVGA !== 'undefined') {
             const parser = new SVGA.Parser();
-            const previewEndpoint = `/api/download/${data.jobId}?preview=1&t=${Date.now()}`;
+            // Load the FULL svga file into the player (preview=1 is small PNG,
+            // reserved for static fallback only).
+            const previewEndpoint = `/api/download/${data.jobId}?t=${Date.now()}`;
 
             let previewObjectUrl = null;
             try {
@@ -809,20 +950,21 @@ async function startConversion(module) {
               console.log('[Preview][SVGA][Fetch]', {
                 status: previewRes.status,
                 ok: previewRes.ok,
+                size: previewRes.headers.get('content-length'),
                 contentType: previewRes.headers.get('content-type')
               });
               if (!previewRes.ok) {
                 throw new Error(`Preview download failed: HTTP ${previewRes.status}`);
               }
               const previewBlob = await previewRes.blob();
+              console.log('[Preview][SVGA][Blob]', { bytes: previewBlob.size });
               previewObjectUrl = URL.createObjectURL(previewBlob);
             } catch (fetchErr) {
-              console.error('[Preview][SVGA][FetchError]', fetchErr);
-              convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview fetch failed. Please retry or download file.</div>';
-              return;
+              console.warn('[Preview][SVGA] Using static fallback:', fetchErr.message);
+              showStaticSvgaFallback(convertedCanvas, data.jobId, data.sizeMB, isRemoving, data.previewDataUrl);
             }
 
-            parser.load(previewObjectUrl, (videoItem) => {
+            if (previewObjectUrl) parser.load(previewObjectUrl, (videoItem) => {
               const nativeW = videoItem.videoSize.width || 300;
               const nativeH = videoItem.videoSize.height || 300;
               console.log('[Preview][SVGA][Meta]', {
@@ -898,6 +1040,9 @@ async function startConversion(module) {
 
               let active = mountPlayer(isRemoving ? true : false);
 
+              // YouTube-style play/pause + volume controls (audio via Howler).
+              const previewControls = attachSvgaPreviewControls(convertedCanvas, active.player, data.hasAudio === true);
+
               // NO mode: if strict opaque context renders blank, retry with alpha=true compatibility mode.
               if (!isRemoving) {
                 setTimeout(() => {
@@ -908,6 +1053,7 @@ async function startConversion(module) {
                       active.player.stopAnimation();
                     } catch (e) {}
                     active = mountPlayer(true);
+                    previewControls.bindPlayer(active.player);
                     setTimeout(() => {
                       const visibleAfterFallback = isCanvasVisible(active.canvas);
                       console.log('[Preview][SVGA][FallbackCheck]', { visibleAfterFallback });
@@ -921,13 +1067,13 @@ async function startConversion(module) {
               }
             }, (err) => {
               console.error('SVGA load error:', err);
-              convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA Preview failed. Please download to view.</div>';
+              showStaticSvgaFallback(convertedCanvas, data.jobId, data.sizeMB, isRemoving, data.previewDataUrl);
               if (previewObjectUrl) {
                 URL.revokeObjectURL(previewObjectUrl);
               }
             });
           } else {
-            convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA library not loaded</div>';
+            showStaticSvgaFallback(convertedCanvas, data.jobId, data.sizeMB, isRemoving, data.previewDataUrl);
           }
         }
 
@@ -943,49 +1089,23 @@ async function startConversion(module) {
         renderVideoSvgaAudioPreview(data.jobId, data.hasAudio === true);
       }
 
-      // Download button — pre-fetch file as Blob so download works
-      // even if Railway server restarts and loses the in-memory job.
+      // Download button — direct browser download (no blob pre-fetch).
+      // The /api/download route is token-exempt, so a plain link download is
+      // native, memory-friendly, and avoids a second large concurrent fetch
+      // that was competing with the preview fetch and exhausting tab memory.
       const dlBtn = document.getElementById(`${prefix}-download-btn`);
       if (dlBtn) {
-        dlBtn.disabled = true;
-        dlBtn.textContent = 'Preparing...';
-
-        (async () => {
-          try {
-            const dlRes = await fetch(`/api/download/${data.jobId}`, { cache: 'no-store' });
-            if (!dlRes.ok) throw new Error(`HTTP ${dlRes.status}`);
-            const dlBlob = await dlRes.blob();
-            const blobUrl = URL.createObjectURL(dlBlob);
-
-            // Save to IndexedDB for history list
-            await saveFileToDB(data.jobId, dlBlob);
-
-            dlBtn.disabled = false;
-            dlBtn.textContent = '⬇ Download SVGA';
-            dlBtn.onclick = () => {
-              const a = document.createElement('a');
-              a.href = blobUrl;
-              a.download = data.filename;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              showToast('Download started!', 'success');
-            };
-          } catch (err) {
-            console.error('Pre-fetch failed, using direct URL:', err);
-            dlBtn.disabled = false;
-            dlBtn.textContent = '⬇ Download SVGA';
-            dlBtn.onclick = () => {
-              const a = document.createElement('a');
-              a.href = `/api/download/${data.jobId}`;
-              a.download = data.filename;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              showToast('Download started!', 'success');
-            };
-          }
-        })();
+        dlBtn.disabled = false;
+        dlBtn.textContent = '⬇ Download SVGA';
+        dlBtn.onclick = () => {
+          const a = document.createElement('a');
+          a.href = `/api/download/${data.jobId}`;
+          a.download = data.filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          showToast('Download started!', 'success');
+        };
       } else {
         console.error('Download button not found:', `${prefix}-download-btn`);
       }

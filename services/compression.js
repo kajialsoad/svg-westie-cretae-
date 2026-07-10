@@ -467,9 +467,11 @@ function getOneMbAttemptPlan(format, attemptIndex, metadata = {}, tier = 'standa
       stripMetadata: true,
       removeUnusedAssets: true,
       dedupeAssets: true,
-      trimTransparent: true,
+      // trimTransparent disabled — it can shift content in native SVGA players
+      // (layout/transform must remain unchanged for playback fidelity).
+      trimTransparent: false,
       compressionLevel: 9,
-      effort: 10,
+      effort: 4,
       zlibLevel: 9,
       ...plan,
     };
