@@ -637,6 +637,11 @@ async function startConversion(module) {
       const oneMbMode = !!(oneMbCheckbox && (oneMbCheckbox.checked || oneMbCheckbox.matches(':checked')));
       formData.append('format', format);
       formData.append('oneMbMode', oneMbMode ? '1' : '0');
+      // User-selected compression level: MAX = lossless effort 10 (smaller,
+      // slower), FAST = effort 4 (quicker). Applies to SVGA output.
+      const maxCompression = document.getElementById('svga-max-compression')?.checked === true;
+      formData.append('maxCompression', maxCompression ? '1' : '0');
+      console.log('Max compression:', maxCompression);
       console.log('SVGA format:', format);
       console.log('ONE MB mode:', oneMbMode, {
         checkboxFound: !!oneMbCheckbox,
@@ -757,24 +762,13 @@ async function startConversion(module) {
           const svgaReady = await ensureSVGALibraryLoaded();
           if (svgaReady && typeof SVGA !== 'undefined') {
             const parser = new SVGA.Parser();
+            // Load directly from the (token-exempt) URL and let the SVGA
+            // library fetch it internally. Avoids allocating a large blob
+            // ourselves, which was failing with "Failed to fetch" on
+            // memory-heavy tabs.
             const outputUrl = `/api/download/${data.jobId}?t=${Date.now()}`;
-            let outputObjectUrl = null;
 
-            try {
-              const outputRes = await fetch(outputUrl, { cache: 'no-store' });
-              if (!outputRes.ok) {
-                throw new Error(`SVGA download failed: HTTP ${outputRes.status}`);
-              }
-
-              const outputBlob = await outputRes.blob();
-              outputObjectUrl = URL.createObjectURL(outputBlob);
-            } catch (fetchErr) {
-              console.error('[Preview][SVGA Output][FetchError]', fetchErr);
-              convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA preview fetch failed. Please download file.</div>';
-              return;
-            }
-
-            parser.load(outputObjectUrl, (videoItem) => {
+            parser.load(outputUrl, (videoItem) => {
               const nativeW = videoItem.videoSize.width || 300;
               const nativeH = videoItem.videoSize.height || 300;
 
@@ -807,16 +801,9 @@ async function startConversion(module) {
 
               // YouTube-style play/pause + volume controls (audio via Howler).
               attachSvgaPreviewControls(convertedCanvas, player, data.hasAudio === true);
-
-              if (outputObjectUrl) {
-                URL.revokeObjectURL(outputObjectUrl);
-              }
             }, (err) => {
               console.error('SVGA output load error:', err);
               convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA Preview failed. Please download to view.</div>';
-              if (outputObjectUrl) {
-                URL.revokeObjectURL(outputObjectUrl);
-              }
             });
           } else {
             convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">SVGA library not loaded</div>';
@@ -839,86 +826,34 @@ async function startConversion(module) {
           convertedCanvas.innerHTML = '';
           convertedCanvas.style.aspectRatio = '';
 
+          // Load the animated output (WebP/GIF) DIRECTLY via <img src>. The
+          // download route is token-exempt, so the browser streams the image
+          // natively without pulling 10-13MB into JS memory — which was the
+          // cause of "Failed to fetch" on long/heavy sessions.
           const outputUrl = `/api/download/${data.jobId}?t=${Date.now()}`;
           const previewUrl = `/api/download/${data.jobId}?preview=1&t=${Date.now()}`;
-          try {
-            const outputRes = await fetch(outputUrl, { cache: 'no-store' });
-            if (!outputRes.ok) {
-              throw new Error(`HTTP ${outputRes.status}`);
-            }
-
-            const outputBlob = await outputRes.blob();
-            const outputObjectUrl = URL.createObjectURL(outputBlob);
-
-            const img = document.createElement('img');
-            img.src = outputObjectUrl;
-            img.alt = `Converted ${format.toUpperCase()}`;
-
-            img.onload = function () {
+          const img = document.createElement('img');
+          img.alt = `Converted ${format.toUpperCase()}`;
+          img.onload = function () {
+            convertedCanvas.innerHTML = '';
+            convertedCanvas.appendChild(createMediaPreviewStage(img, data.metadata || data.outputMetadata || {}));
+            renderSvgaPreviewDebugInfo(data, img.naturalWidth, img.naturalHeight);
+          };
+          img.onerror = function () {
+            // Fall back to the lightweight static preview frame.
+            const fb = document.createElement('img');
+            fb.alt = `Converted ${format.toUpperCase()} preview`;
+            fb.onload = function () {
               convertedCanvas.innerHTML = '';
-              convertedCanvas.appendChild(createMediaPreviewStage(img, data.metadata || data.outputMetadata || {}));
-              renderSvgaPreviewDebugInfo(data, img.naturalWidth, img.naturalHeight);
-              setTimeout(() => URL.revokeObjectURL(outputObjectUrl), 1000);
+              convertedCanvas.appendChild(createMediaPreviewStage(fb, data.metadata || data.outputMetadata || {}));
+              renderSvgaPreviewDebugInfo(data, fb.naturalWidth, fb.naturalHeight);
             };
-
-            img.onerror = async function () {
-              URL.revokeObjectURL(outputObjectUrl);
-
-              try {
-                const previewRes = await fetch(previewUrl, { cache: 'no-store' });
-                if (!previewRes.ok) {
-                  throw new Error(`HTTP ${previewRes.status}`);
-                }
-
-                const previewBlob = await previewRes.blob();
-                const previewObjectUrl = URL.createObjectURL(previewBlob);
-                const fallbackImg = document.createElement('img');
-                fallbackImg.src = previewObjectUrl;
-                fallbackImg.alt = `Converted ${format.toUpperCase()} preview`;
-                fallbackImg.onload = function () {
-                  convertedCanvas.innerHTML = '';
-                  convertedCanvas.appendChild(createMediaPreviewStage(fallbackImg, data.metadata || data.outputMetadata || {}));
-                  renderSvgaPreviewDebugInfo(data, fallbackImg.naturalWidth, fallbackImg.naturalHeight);
-                  setTimeout(() => URL.revokeObjectURL(previewObjectUrl), 1000);
-                };
-                fallbackImg.onerror = function () {
-                  URL.revokeObjectURL(previewObjectUrl);
-                  convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
-                };
-
-              } catch (fallbackErr) {
-                console.error('Preview fallback failed:', fallbackErr);
-                convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
-              }
-            };
-
-          } catch (previewErr) {
-            console.error('Preview fetch failed:', previewErr);
-            try {
-              const previewRes = await fetch(previewUrl, { cache: 'no-store' });
-              if (!previewRes.ok) {
-                throw new Error(`HTTP ${previewRes.status}`);
-              }
-              const previewBlob = await previewRes.blob();
-              const previewObjectUrl = URL.createObjectURL(previewBlob);
-              const img = document.createElement('img');
-              img.src = previewObjectUrl;
-              img.alt = `Converted ${format.toUpperCase()} preview`;
-              img.onload = function () {
-                convertedCanvas.innerHTML = '';
-                convertedCanvas.appendChild(createMediaPreviewStage(img, data.metadata || data.outputMetadata || {}));
-                renderSvgaPreviewDebugInfo(data, img.naturalWidth, img.naturalHeight);
-                setTimeout(() => URL.revokeObjectURL(previewObjectUrl), 1000);
-              };
-              img.onerror = function () {
-                URL.revokeObjectURL(previewObjectUrl);
-                convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
-              };
-            } catch (fallbackErr) {
-              console.error('Preview fallback failed:', fallbackErr);
+            fb.onerror = function () {
               convertedCanvas.innerHTML = '<div style="color:#888;padding:2rem;">Preview not available — use Download button</div>';
-            }
-          }
+            };
+            fb.src = previewUrl;
+          };
+          img.src = outputUrl;
         }
 
         // Show file details (same as Source Preview)
@@ -942,29 +877,12 @@ async function startConversion(module) {
             const parser = new SVGA.Parser();
             // Load the FULL svga file into the player (preview=1 is small PNG,
             // reserved for static fallback only).
+            // Load directly from the (token-exempt) URL; the SVGA library
+            // fetches it internally, avoiding a large blob allocation that was
+            // failing with "Failed to fetch" on memory-heavy tabs.
             const previewEndpoint = `/api/download/${data.jobId}?t=${Date.now()}`;
 
-            let previewObjectUrl = null;
-            try {
-              const previewRes = await fetch(previewEndpoint, { cache: 'no-store' });
-              console.log('[Preview][SVGA][Fetch]', {
-                status: previewRes.status,
-                ok: previewRes.ok,
-                size: previewRes.headers.get('content-length'),
-                contentType: previewRes.headers.get('content-type')
-              });
-              if (!previewRes.ok) {
-                throw new Error(`Preview download failed: HTTP ${previewRes.status}`);
-              }
-              const previewBlob = await previewRes.blob();
-              console.log('[Preview][SVGA][Blob]', { bytes: previewBlob.size });
-              previewObjectUrl = URL.createObjectURL(previewBlob);
-            } catch (fetchErr) {
-              console.warn('[Preview][SVGA] Using static fallback:', fetchErr.message);
-              showStaticSvgaFallback(convertedCanvas, data.jobId, data.sizeMB, isRemoving, data.previewDataUrl);
-            }
-
-            if (previewObjectUrl) parser.load(previewObjectUrl, (videoItem) => {
+            parser.load(previewEndpoint, (videoItem) => {
               const nativeW = videoItem.videoSize.width || 300;
               const nativeH = videoItem.videoSize.height || 300;
               console.log('[Preview][SVGA][Meta]', {
@@ -1061,16 +979,9 @@ async function startConversion(module) {
                   }
                 }, 500);
               }
-
-              if (previewObjectUrl) {
-                URL.revokeObjectURL(previewObjectUrl);
-              }
             }, (err) => {
               console.error('SVGA load error:', err);
               showStaticSvgaFallback(convertedCanvas, data.jobId, data.sizeMB, isRemoving, data.previewDataUrl);
-              if (previewObjectUrl) {
-                URL.revokeObjectURL(previewObjectUrl);
-              }
             });
           } else {
             showStaticSvgaFallback(convertedCanvas, data.jobId, data.sizeMB, isRemoving, data.previewDataUrl);
@@ -1266,6 +1177,14 @@ document.addEventListener('DOMContentLoaded', () => {
   renderHistory();
   navigateTo('home');
   document.getElementById('svga-one-mb-mode')?.addEventListener('change', updateSvgaCompressionUI);
+  document.getElementById('svga-max-compression')?.addEventListener('change', (e) => {
+    const status = document.getElementById('svga-max-comp-status');
+    if (status) {
+      status.textContent = e.target.checked
+        ? 'MAX mode: maximum lossless compression (effort 10) — smaller file, 100% quality, a bit slower.'
+        : 'FAST mode: quick compression (effort 4). Turn on MAX for maximum lossless squeeze.';
+    }
+  });
   updateSvgaCompressionUI();
 });
 

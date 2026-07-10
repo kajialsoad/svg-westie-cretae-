@@ -108,6 +108,11 @@ router.post('/convert/svga', upload.fields([
     const format = req.body.format || 'webp';
     const tier = req.body.sizeTier || 'standard';
     const oneMbMode = compression.isOneMbModeEnabled(req.body.oneMbMode);
+    // User-selected compression level for SVGA output: MAX -> sharp effort 10
+    // (smallest, lossless, slower); FAST -> effort 4 (quicker).
+    const maxCompression = req.body.maxCompression === '1' || req.body.maxCompression === 'true';
+    const svgaEffort = maxCompression ? 10 : 4;
+    console.log('[SVGA] compression level:', maxCompression ? 'MAX (effort 10)' : 'FAST (effort 4)');
     const tierSettings = compression.getTierSettings(tier);
     const targetConfig = compression.getTargetConfig({ tier, oneMbMode, sourceSizeBytes: svgaFile.size });
 
@@ -290,7 +295,7 @@ router.post('/convert/svga', upload.fields([
               colors: 256,
               quality: 100,
               compressionLevel: 9,
-              effort: 4,
+              effort: svgaEffort,
               zlibLevel: 9,
               stripMetadata: true,
             });
@@ -345,7 +350,7 @@ router.post('/convert/svga', upload.fields([
               trimTransparent: false,
               losslessOnly: true,
               compressionLevel: 9,
-              effort: 4,
+              effort: svgaEffort,
               zlibLevel: 9,
             });
             if (structuralBuffer.length > svgaFile.buffer.length) {
@@ -368,6 +373,7 @@ router.post('/convert/svga', upload.fields([
             plan.trimTransparent = false;
             plan.dedupeAssets = false;
             plan.removeUnusedAssets = false;
+            plan.effort = svgaEffort; // user-selected compression level
 
             if (audioBuffer && audioDuration) {
               plan.audioBuffer = audioBuffer;

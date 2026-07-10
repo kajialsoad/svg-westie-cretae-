@@ -329,6 +329,22 @@
           <p class="one-mb-status" id="svga-one-mb-status">Disabled. Standard size tier rules are active.</p>
         </div>
 
+        <!-- Compression Level (user choice) -->
+        <div class="smart-compression-panel">
+          <div class="smart-compression-header">
+            <div>
+              <h3 class="section-title">Compression Level</h3>
+              <p class="smart-compression-copy">MAX = smallest file, 100% lossless quality (a bit slower). FAST = quicker, still optimized.</p>
+            </div>
+            <label class="one-mb-toggle" id="svga-max-comp-toggle">
+              <input type="checkbox" id="svga-max-compression">
+              <span class="one-mb-toggle-track"></span>
+              <span class="one-mb-toggle-text">MAX</span>
+            </label>
+          </div>
+          <p class="one-mb-status" id="svga-max-comp-status">FAST mode: quick compression (effort 4). Turn on MAX for maximum lossless squeeze.</p>
+        </div>
+
         <!-- Convert Button -->
         <div class="convert-button-wrapper" id="svga-convert-wrapper" style="display:none;">
           <button class="convert-btn" id="svga-convert-btn-main" onclick="startConversion('svga-webp')">
@@ -723,7 +739,7 @@
   <script src="/js/config.js?v=1.0"></script>
   <script src="/js/token.js?v=1.4"></script>
   <script src="/js/svga-preview.js?v=1.5"></script>
-  <script src="/js/app.js?v=2.4"></script>
+  <script src="/js/app.js?v=2.7"></script>
   <script src="/js/editor.js?v=1.4"></script>
 </body>
 
