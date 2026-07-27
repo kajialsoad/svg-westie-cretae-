@@ -25,9 +25,9 @@ import conversions
 import svga_codec
 import bgremove
 
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=2000)
+db = client[os.environ.get('DB_NAME', 'svgastudio')]
 APP_NAME = os.environ.get("APP_NAME", "svgastudio")
 BG_JOBS_DIR = "/tmp/bgjobs"
 
@@ -68,7 +68,10 @@ def _set_cookie(resp, token):
 
 
 async def _bump(field, n=1):
-    await db.stats.update_one({"_id": "global"}, {"$inc": {field: n}}, upsert=True)
+    try:
+        await db.stats.update_one({"_id": "global"}, {"$inc": {field: n}}, upsert=True)
+    except Exception as e:
+        logger.warning(f"Stats bump skipped (MongoDB offline): {e}")
 
 
 # ---------------- auth ----------------
@@ -337,11 +340,15 @@ def _showcase_public(doc):
 
 @api_router.get("/showcase")
 async def list_showcase(category: str = None):
-    q = {"is_deleted": {"$ne": True}}
-    if category and category != "all":
-        q["category"] = category
-    docs = await db.showcase.find(q).sort("created_at", -1).to_list(500)
-    return [_showcase_public(d) for d in docs]
+    try:
+        q = {"is_deleted": {"$ne": True}}
+        if category and category != "all":
+            q["category"] = category
+        docs = await db.showcase.find(q).sort("created_at", -1).to_list(500)
+        return [_showcase_public(d) for d in docs]
+    except Exception as e:
+        logger.warning(f"MongoDB showcase fetch skipped: {e}")
+        return []
 
 
 @api_router.get("/showcase/{item_id}/file")
@@ -393,9 +400,13 @@ async def delete_showcase(item_id: str, request: Request):
 # ---------------- faq ----------------
 @api_router.get("/faq")
 async def list_faq():
-    docs = await db.faq.find({"is_deleted": {"$ne": True}}).sort("order", 1).to_list(200)
-    return [{"id": str(d["_id"]), "question": d["question"], "answer": d["answer"],
-             "order": d.get("order", 0)} for d in docs]
+    try:
+        docs = await db.faq.find({"is_deleted": {"$ne": True}}).sort("order", 1).to_list(200)
+        return [{"id": str(d["_id"]), "question": d["question"], "answer": d["answer"],
+                 "order": d.get("order", 0)} for d in docs]
+    except Exception as e:
+        logger.warning(f"MongoDB FAQ fetch skipped: {e}")
+        return []
 
 
 @api_router.post("/admin/faq")
@@ -423,12 +434,15 @@ async def delete_faq(faq_id: str, request: Request):
 # ---------------- stats ----------------
 @api_router.get("/stats")
 async def stats():
-    s = await db.stats.find_one({"_id": "global"}) or {}
-    showcase_count = await db.showcase.count_documents({"is_deleted": {"$ne": True}})
-    s.pop("_id", None)
-    return {"previews": s.get("previews", 0), "conversions": s.get("conversions", 0),
-            "showcase_views": s.get("showcase_views", 0), "showcase_count": showcase_count,
-            "bg_images": s.get("bg_images", 0), "bg_videos": s.get("bg_videos", 0)}
+    try:
+        s = await db.stats.find_one({"_id": "global"}) or {}
+        showcase_count = await db.showcase.count_documents({"is_deleted": {"$ne": True}})
+        s.pop("_id", None)
+        return {"previews": s.get("previews", 0), "conversions": s.get("conversions", 0),
+                "showcase_views": s.get("showcase_views", 0), "showcase_count": showcase_count,
+                "bg_images": s.get("bg_images", 0), "bg_videos": s.get("bg_videos", 0)}
+    except Exception as e:
+        return {"previews": 0, "conversions": 0, "showcase_views": 0, "showcase_count": 0, "bg_images": 0, "bg_videos": 0}
 
 
 @api_router.get("/admin/stats")
@@ -464,8 +478,11 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup():
-    await auth_mod.seed_admin(db)
-    await db.users.create_index("email", unique=True)
+    try:
+        await auth_mod.seed_admin(db)
+        await db.users.create_index("email", unique=True)
+    except Exception as e:
+        logger.warning(f"MongoDB admin seed skipped (MongoDB offline): {e}")
     try:
         storage_mod.init_storage()
         logger.info("storage ready")
