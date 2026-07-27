@@ -9,13 +9,18 @@ import LayerEditor from "./pages/LayerEditor";
 import Login from "./pages/Login";
 import Admin from "./pages/Admin";
 
-const basename = process.env.PUBLIC_URL || (window.location.pathname.startsWith('/tanvir-svga') ? '/tanvir-svga' : '');
+const getBasename = () => {
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/tanvir-svga")) {
+    return "/tanvir-svga";
+  }
+  return process.env.PUBLIC_URL || "";
+};
 
 function App() {
   return (
     <div className="App">
       <AuthProvider>
-        <BrowserRouter basename={basename}>
+        <BrowserRouter basename={getBasename()}>
           <Toaster theme="dark" position="top-center" richColors />
           <Routes>
             <Route path="/" element={<Home />} />
@@ -24,6 +29,7 @@ function App() {
             <Route path="/editor" element={<LayerEditor />} />
             <Route path="/login" element={<Login />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="*" element={<Home />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

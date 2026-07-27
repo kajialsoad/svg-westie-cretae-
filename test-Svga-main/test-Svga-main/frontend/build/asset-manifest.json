@@ -1,13 +1,13 @@
 {
   "files": {
     "main.css": "/tanvir-svga/static/css/main.e4e6b489.css",
-    "main.js": "/tanvir-svga/static/js/main.84e8d77e.js",
+    "main.js": "/tanvir-svga/static/js/main.47b2d2b0.js",
     "index.html": "/tanvir-svga/index.html",
     "main.e4e6b489.css.map": "/tanvir-svga/static/css/main.e4e6b489.css.map",
-    "main.84e8d77e.js.map": "/tanvir-svga/static/js/main.84e8d77e.js.map"
+    "main.47b2d2b0.js.map": "/tanvir-svga/static/js/main.47b2d2b0.js.map"
   },
   "entrypoints": [
     "static/css/main.e4e6b489.css",
-    "static/js/main.84e8d77e.js"
+    "static/js/main.47b2d2b0.js"
   ]
 }
