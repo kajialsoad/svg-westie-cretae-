@@ -82,15 +82,12 @@ async function main() {
             conn,
             [
                 `cd ${REMOTE_ROOT}`,
+                'git merge --abort || true',
                 'git fetch origin',
-                `git checkout ${DEPLOY_BRANCH}`,
-                // Stash any local live-data changes (e.g. token-db.json generated on the server)
-                // so the pull doesn't fail, then restore them after pulling new code.
-                'git stash push --include-untracked -- token-db.json || true',
-                `git pull origin ${DEPLOY_BRANCH}`,
-                'git stash pop || true'
+                `git reset --hard origin/${DEPLOY_BRANCH}`,
+                `git pull origin ${DEPLOY_BRANCH}`
             ].join(' && '),
-            'Syncing code from GitHub (preserving live token-db.json)'
+            'Syncing code from GitHub (force updating to latest main)'
         );
 
         // Step 2: Install node dependencies
