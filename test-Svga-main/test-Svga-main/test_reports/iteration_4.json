@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 4 — full validation of new features: Layer Editor (POST /api/svga/layers), sync SVGA→alpha-webm/mov conversions, async MP4→SVGA (incl. AI bg-removal), async /api/jobs/svga-export (alpha-webm + gif + mp4). Backend: 30/30 regression + 11/11 new = 41/41 passing. Frontend: /editor page fully functional (20 layer rows, all per-layer controls, GIF export completed end-to-end), MP4→SVGA convert dialog (remove-bg-checkbox + preset-select) triggers async job, status polling works, success toast fires and dialog auto-closes. Header 'Editor' nav link + SVGA→Alpha WebM/MOV tool cards all present. Zero console errors.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "MP4→SVGA convert dialog", "issues": ["Success toast shows 'SVGA ready (0.00 MB) — downloading' for tiny synthetic clips because size/1024/1024 rounds to 0.00. Minor UX polish — consider showing bytes/KB when <10KB or using floor of 0.01 MB. Not a functional bug."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_new_features.py",
+    "/app/backend/tests/test_bgremove.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/pytest_new_features.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "conversions._enc_alpha_webm/mov use fixed subprocess timeout=115s. For longer/larger SVGAs this could truncate. Consider making timeout scale with frame count or exposing via param.",
+    "Single background worker (loop.run_in_executor default). Heavy jobs (bg-removal, alpha video) queue sequentially. Documented — but with concurrent user load this becomes a bottleneck; consider a small ThreadPoolExecutor(max_workers=2) or per-job process.",
+    "Persisting from earlier iterations: BG_JOBS_DIR=/tmp/bgjobs and /tmp/... for job results is ephemeral. After pod restart mongo rows say status=done but the file is gone → 410 to user. Consider startup cleanup that flips orphaned done→expired.",
+    "svga_export payload uses int keys via json.loads then int(k) — good. But there's no validation that the layer index actually exists (an edit for a non-existent index is silently ignored in render_frames). Consider returning warning in response.",
+    "encode_adaptive attempts=5 hard cap. For >5MB inputs where compression can't reach target, the last iteration is returned regardless (>5MB). Acceptable — but the 'under 5MB' promise isn't strictly guaranteed. Frontend doesn't surface this to the user."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_features.py (NEW - 11 tests covering layers, alpha video sync, async mp4-to-svga (both bg on/off), async svga-export for alpha-webm/gif/mp4, bad job id, stats increment)"
+  ],
+  "success_rate": { "backend": "100% (41/41: 30 regression + 11 new-feature)", "frontend": "100%" },
+  "test_credentials": "admin@svga.dev / admin123 (verified working)",
+  "seed_data_creation": "Reused existing /tmp/sample.svga (160x160 20f) and /tmp/clip.mp4 (~3s 320x240).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_new_features.py is the source of truth for the async job pipeline. Uses helper _poll(job_id, timeout, interval=2.5). AI bg-removal test uses preset='small' to keep total time <60s on this sample clip (~35s incl. u2net inference for ~36 frames). If sample.svga is regenerated to non-160x160 or non-20 frames, update TestLayers assertions. Header nav testids follow pattern nav-{label_lowercase} (with space) — nav-editor works; nav-remove bg has a space (unconventional but functional).",
+  "rca of the issue": "No bugs found this iteration. All new endpoints and UI flows behaved as designed."
+}

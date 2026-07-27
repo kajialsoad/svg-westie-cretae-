@@ -9,11 +9,16 @@ console.log('=== Deploying AnimSuite Pro (Safe & Isolated) ===\n');
 // Please fill in these values to connect to your Hostinger VPS server safely.
 // ==============================================================================
 const SSH_CONFIG = {
-    host: 'YOUR_SERVER_IP',      // Your Hostinger VPS IP Address
+    host: process.env.VPS_HOST || '161.97.81.254',       // Your Contabo VPS IP Address
     port: 22,                    // SSH Port (Default is 22)
-    username: 'root',            // SSH Username (typically root or ubuntu)
-    password: 'YOUR_PASSWORD',   // SSH Password OR set 'privateKey: fs.readFileSync("path/to/key")'
+    username: process.env.VPS_USER || 'root',            // SSH Username (typically root or ubuntu)
+    password: process.env.VPS_PASSWORD,   // SSH Password, read from env var (never hardcode/commit this)
 };
+
+if (!SSH_CONFIG.password) {
+    console.error('❌ Missing VPS_PASSWORD environment variable. Set it before running: $env:VPS_PASSWORD="..."');
+    process.exit(1);
+}
 
 const REMOTE_ROOT = '/var/www/animsuite-pro'; // Dedicated folder on VPS
 const PM2_APP_NAME = 'animsuite';             // Unique PM2 process name
@@ -79,9 +84,13 @@ async function main() {
                 `cd ${REMOTE_ROOT}`,
                 'git fetch origin',
                 `git checkout ${DEPLOY_BRANCH}`,
-                `git pull origin ${DEPLOY_BRANCH}`
+                // Stash any local live-data changes (e.g. token-db.json generated on the server)
+                // so the pull doesn't fail, then restore them after pulling new code.
+                'git stash push --include-untracked -- token-db.json || true',
+                `git pull origin ${DEPLOY_BRANCH}`,
+                'git stash pop || true'
             ].join(' && '),
-            'Syncing code from GitHub'
+            'Syncing code from GitHub (preserving live token-db.json)'
         );
 
         // Step 2: Install node dependencies

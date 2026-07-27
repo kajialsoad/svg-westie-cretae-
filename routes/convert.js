@@ -1280,6 +1280,92 @@ router.get('/download/:jobId', (req, res) => {
 });
 
 /**
+ * POST /api/convert/compose-svga
+ * Stack multiple SVGA files (bottom → top) into one new SVGA
+ */
+router.post('/convert/compose-svga', upload.array('files', 20), async (req, res) => {
+  const jobId = uuidv4();
+
+  try {
+    if (!req.files || req.files.length < 1) {
+      return res.status(400).json({ error: 'Upload at least one .svga file' });
+    }
+
+    jobs.set(jobId, {
+      id: jobId,
+      status: 'processing',
+      step: 'Parsing layers...',
+      progress: 10,
+    });
+
+    const layers = [];
+    for (const file of req.files) {
+      const movieData = await svgaService.parseSVGA(file.buffer);
+      layers.push({
+        name: file.originalname,
+        movieData,
+        images: movieData.images || {},
+      });
+    }
+
+    jobs.set(jobId, { ...jobs.get(jobId), step: 'Compositing frames...', progress: 40 });
+
+    const fps = parseInt(req.body.fps, 10) || 0;
+    let transforms = [];
+    try {
+      transforms = JSON.parse(req.body.transforms || '[]');
+    } catch (_) {
+      transforms = [];
+    }
+
+    const composed = await svgaRenderer.composeStackedLayers(layers, {
+      fps: fps > 0 ? fps : undefined,
+      transforms,
+    });
+
+    jobs.set(jobId, { ...jobs.get(jobId), step: 'Encoding SVGA...', progress: 75 });
+
+    const outputBuffer = await svgaService.encodeSVGA(composed.frames, {
+      width: composed.width,
+      height: composed.height,
+      fps: composed.fps,
+    });
+
+    const filename = `composed_${Date.now()}.svga`;
+    jobs.set(jobId, {
+      id: jobId,
+      status: 'done',
+      progress: 100,
+      filename,
+      mimetype: 'application/octet-stream',
+      size: outputBuffer.length,
+      buffer: outputBuffer,
+      createdAt: Date.now(),
+      meta: {
+        width: composed.width,
+        height: composed.height,
+        fps: composed.fps,
+        frames: composed.frames.length,
+        layers: req.files.length,
+      },
+    });
+
+    res.json({
+      success: true,
+      jobId,
+      filename,
+      size: outputBuffer.length,
+      downloadUrl: `/api/download/${jobId}`,
+      meta: jobs.get(jobId).meta,
+    });
+  } catch (err) {
+    console.error('[compose-svga]', err);
+    jobs.set(jobId, { id: jobId, status: 'error', error: err.message });
+    res.status(500).json({ error: err.message, jobId });
+  }
+});
+
+/**
  * GET /api/health
  * Check system health
  */

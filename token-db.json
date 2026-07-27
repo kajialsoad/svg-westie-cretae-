@@ -40,7 +40,7 @@
       "token": "ASPRO-4667CDBF",
       "status": "disabled",
       "createdAt": "2026-05-19T11:57:26.718Z",
-      "expiresAt": "2026-06-18T11:57:26.718Z"
+      "expiresAt": "2026-08-05T10:06:16.270Z"
     },
     {
       "id": "8ce75c2a-9b15-4184-9ce6-8a6ac9446e52",
@@ -83,6 +83,41 @@
       "status": "active",
       "createdAt": "2026-06-07T10:34:08.172Z",
       "expiresAt": "2026-07-27T10:08:59.687Z"
+    },
+    {
+      "id": "c947d721-9da6-4047-bd5f-e513da43c5ce",
+      "token": "ASPRO-F40B4A1D",
+      "status": "active",
+      "createdAt": "2026-07-06T10:02:15.069Z",
+      "expiresAt": "2027-07-06T10:02:15.069Z"
+    },
+    {
+      "id": "abb6796e-f11d-413f-855b-ac65f24942b9",
+      "token": "ASPRO-8714D681",
+      "status": "active",
+      "createdAt": "2026-07-06T10:09:27.770Z",
+      "expiresAt": "2026-08-05T10:09:27.770Z"
+    },
+    {
+      "id": "383a9a7b-590f-454a-bbaf-cadad91594b9",
+      "token": "ASPRO-428837D9",
+      "status": "active",
+      "createdAt": "2026-07-06T10:09:34.467Z",
+      "expiresAt": "2026-08-05T10:09:34.467Z"
+    },
+    {
+      "id": "60613944-81c6-484b-a861-981c45d4d226",
+      "token": "ASPRO-FEF15B95",
+      "status": "active",
+      "createdAt": "2026-07-06T10:10:23.721Z",
+      "expiresAt": "2026-08-05T10:10:23.721Z"
+    },
+    {
+      "id": "df336857-58f4-4575-a52b-bab1382a2953",
+      "token": "ASPRO-A213F382",
+      "status": "active",
+      "createdAt": "2026-07-10T07:03:18.017Z",
+      "expiresAt": "2026-08-09T07:03:18.017Z"
     }
   ]
 }

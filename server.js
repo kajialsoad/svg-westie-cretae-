@@ -32,6 +32,30 @@ app.use((req, res, next) => {
   next();
 });
 
+const fs = require('fs');
+const tanvirBuildDir = path.join(__dirname, 'test-Svga-main', 'test-Svga-main', 'frontend', 'build');
+const tanvirPublicDir = path.join(__dirname, 'test-Svga-main', 'test-Svga-main', 'frontend', 'public');
+
+// Serve Tanvir SVGA Project (test-Svga-main)
+app.use('/tanvir-svga', (req, res, next) => {
+  const targetDir = fs.existsSync(tanvirBuildDir) ? tanvirBuildDir : tanvirPublicDir;
+  express.static(targetDir, {
+    etag: false,
+    lastModified: false,
+    setHeaders: (res, filePath) => {
+      if (/\.(js|css|html)$/i.test(filePath)) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      }
+    }
+  })(req, res, next);
+});
+
+app.get('/tanvir-svga*', (req, res) => {
+  const targetDir = fs.existsSync(tanvirBuildDir) ? tanvirBuildDir : tanvirPublicDir;
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.sendFile(path.join(targetDir, 'index.html'));
+});
+
 // Default static serving for the main website.
 // Disable caching for HTML/JS/CSS so code updates are picked up immediately
 // (prevents the browser from running a stale app.js).

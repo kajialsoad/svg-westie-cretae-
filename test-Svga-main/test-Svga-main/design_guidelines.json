@@ -1,0 +1,106 @@
+{
+  "theme": "dark",
+  "archetype": "Swiss & High-Contrast (Developer Tool Variant)",
+  "typography": {
+    "headings": {
+      "fontFamily": "Cabinet Grotesk, sans-serif",
+      "weights": ["font-medium", "font-bold", "font-black"],
+      "letterSpacing": "tracking-tight",
+      "instruction": "Do NOT use Inter for headings."
+    },
+    "body": {
+      "fontFamily": "Inter, sans-serif",
+      "weights": ["font-normal", "font-medium"]
+    },
+    "monospace": {
+      "fontFamily": "JetBrains Mono, monospace",
+      "usage": "Mandatory for file dimensions, memory, FPS, duration, sizes, and code-like elements"
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tighter leading-none font-black",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight leading-tight font-bold",
+      "h3": "text-xl sm:text-2xl tracking-tight font-medium",
+      "h4": "text-lg sm:text-xl tracking-tight font-medium",
+      "body": "text-base leading-relaxed text-zinc-400",
+      "small": "text-sm text-zinc-500",
+      "overline": "text-xs uppercase tracking-[0.2em] font-medium text-zinc-500"
+    }
+  },
+  "colors": {
+    "background": {
+      "main": "#050505",
+      "surface": "#0A0A0A",
+      "surfaceHover": "#111111",
+      "surfaceActive": "#18181B"
+    },
+    "text": {
+      "primary": "#FAFAFA",
+      "secondary": "#A1A1AA",
+      "muted": "#71717A"
+    },
+    "border": {
+      "default": "#27272A",
+      "focus": "#3F3F46",
+      "light": "#ffffff1a"
+    },
+    "brand": {
+      "primary": "#2563EB",
+      "primaryHover": "#3B82F6",
+      "accent": "#00E5FF"
+    },
+    "status": {
+      "success": "#10B981",
+      "warning": "#F59E0B",
+      "error": "#EF4444"
+    }
+  },
+  "surfaces": {
+    "header": "backdrop-blur-xl bg-[#050505]/80 border-b border-zinc-800/80 shadow-sm z-50",
+    "cards_default": "bg-[#0A0A0A] border border-zinc-800/80 rounded-md md:rounded-lg",
+    "bento_grid": "grid bg-zinc-800/50 gap-[1px] border border-zinc-800/80 [&>div]:bg-[#0A0A0A] overflow-hidden",
+    "drag_drop_zone": "bg-[#050505] border-2 border-dashed border-zinc-700 hover:border-blue-500 hover:bg-blue-900/10 transition-colors duration-300 relative group overflow-hidden"
+  },
+  "spacing_and_layout": {
+    "generous_padding": "p-6 md:p-8 lg:p-12",
+    "bento_gap": "gap-px", 
+    "control_room_grid": "grid grid-cols-1 md:grid-cols-12 gap-6"
+  },
+  "components": {
+    "button_primary": "bg-blue-600 text-white hover:bg-blue-500 hover:text-white rounded-md px-4 py-2 font-medium transition-all shadow-[0_0_15px_rgba(37,99,235,0.2)]",
+    "button_secondary": "bg-transparent border border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-white rounded-md px-4 py-2 font-medium transition-colors",
+    "badges": "px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-xs font-mono text-zinc-300",
+    "inputs": "bg-[#0A0A0A] border border-zinc-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-white rounded-md"
+  },
+  "motion": {
+    "hover_lift": "transition-transform duration-200 hover:-translate-y-1",
+    "fade_in": "animate-in fade-in duration-500",
+    "tracing_beam": "absolute inset-0 bg-gradient-to-r from-transparent via-blue-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+  },
+  "icons": {
+    "library": "lucide-react",
+    "style": "stroke-width: 1.5, sharp and precise"
+  },
+  "media": {
+    "images": [
+      {
+        "category": "hero_background",
+        "url": "https://images.unsplash.com/photo-1718844054440-22acf5d5c8f0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjd8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGRhcmslMjB0ZWNoJTIwbWVzaCUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzgyODM5Mjg3fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract dark tech mesh background for subtle hero texture",
+        "usage": "Use as a fixed background in the hero section with low opacity (10-15%) and a gradient mask fading to transparent at the bottom. Ensures it does not compete with the previewer."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Ensure dark mode is forced. Use the specified void black #050505 background.",
+    "Use grid-cols-12 for the main app interface. The Preview Canvas should be col-span-8, and File Info col-span-4 on desktop.",
+    "For the drag-and-drop zone, implement a dotted/dashed border that glows blue on drag-over.",
+    "Data points (Memory, FPS, Size, Dimensions) MUST use JetBrains Mono (font-mono).",
+    "Implement the SVGA Convert Tools as a dense Bento Grid using 1px gaps (gap-[1px] with bg-zinc-800/50 on parent container, bg-[#0A0A0A] on children) to expose the skeleton border.",
+    "Use Lucide icons for all UI controls.",
+    "Every interactive element and key informational text MUST have a data-testid attribute in kebab-case (e.g., data-testid='upload-svga-zone', data-testid='play-pause-btn', data-testid='svga-fps-stat').",
+    "Use Shadcn UI for the conversion tools, accordions, and dropdowns (device frame selection). Do not build complex interactive components from scratch.",
+    "Do NOT use pure #000000 for backgrounds; stick to the specified #050505.",
+    "Implement custom scrollbars for the assets grid with no gutter.",
+    "Write all components and files as .js or .jsx files, NOT .tsx files. You have .js files setup in the environment."
+  ]
+}

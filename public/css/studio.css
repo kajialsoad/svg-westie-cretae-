@@ -1,0 +1,628 @@
+/* Studio modules — SVGA Edit / VAP / Multi Preview / Converters */
+
+.settings-group {
+  margin-bottom: 14px;
+}
+
+.setting-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.studio-tools-panel .convert-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.studio-workspace {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.studio-preview-panel,
+.studio-tools-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.studio-player {
+  min-height: 280px;
+  background: transparent;
+  border-radius: 0;
+  border: none;
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.studio-tool-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.studio-tool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.studio-tool input {
+  accent-color: var(--accent);
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.setting-input,
+.setting-select {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.setting-range {
+  width: 100%;
+  margin-top: 8px;
+  accent-color: var(--accent);
+}
+
+.setting-value {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--accent-light);
+}
+
+.studio-feature-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.studio-feature-list li {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.studio-feature-list li::before {
+  content: '✓ ';
+  color: var(--green);
+}
+
+.vap-preview-stage {
+  position: relative;
+  min-height: 280px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background-image:
+    linear-gradient(45deg, #1a2030 25%, transparent 25%),
+    linear-gradient(-45deg, #1a2030 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #1a2030 75%),
+    linear-gradient(-45deg, transparent 75%, #1a2030 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+  background-color: #0d1117;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vap-preview-stage.solid-bg {
+  background: #0a0c12;
+}
+
+.vap-preview-stage video,
+.studio-source-video {
+  max-width: 100%;
+  max-height: 360px;
+  display: block;
+  margin: 0 auto;
+}
+
+.studio-playback-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.studio-chip-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.studio-chip-btn:hover {
+  border-color: var(--border-hover);
+  color: var(--accent-light);
+}
+
+.studio-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.studio-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.studio-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.studio-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.studio-flow span:nth-child(odd) {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.multi-svga-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+  justify-content: center;
+  align-items: flex-start;
+  overflow: visible;
+}
+
+.multi-svga-card {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  overflow: visible !important;
+  width: auto;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  margin: 0;
+}
+
+.multi-svga-card .multi-shell {
+  position: relative;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  line-height: 0;
+}
+
+.multi-svga-card .multi-stage {
+  position: relative;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  line-height: 0;
+  transform-origin: top left;
+  will-change: transform;
+}
+
+.multi-svga-card .multi-stage canvas {
+  display: block;
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  pointer-events: none;
+}
+
+.multi-svga-card .multi-meta {
+  padding: 10px 0 0;
+  border: 0;
+  background: transparent;
+  text-align: center;
+  max-width: 480px;
+}
+
+.multi-svga-card .multi-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.multi-svga-card .multi-info {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+#page-multi-svga,
+#page-multi-svga .converter-layout,
+#page-multi-svga .studio-layout {
+  overflow: visible;
+}
+
+@media (max-width: 900px) {
+  .studio-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== SVGA Editing (default tool layout) ===== */
+.svga-edit-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(300px, 380px);
+  gap: 20px;
+  align-items: stretch;
+  min-height: 560px;
+}
+
+.svga-edit-preview-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.svga-edit-layer-wrap {
+  cursor: grab;
+  outline: 1px dashed transparent;
+}
+
+.svga-edit-layer-wrap.is-active-layer {
+  outline: 1px dashed rgba(129, 140, 248, 0.55);
+}
+
+.svga-edit-layer-wrap.is-dragging {
+  cursor: grabbing;
+  outline: 1px solid rgba(129, 140, 248, 0.9);
+}
+
+.svga-edit-stage {
+  flex: 1;
+  min-height: 480px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  overflow: visible;
+  touch-action: none;
+}
+
+.svga-edit-filebar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.svga-edit-playback {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.svga-edit-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+.svga-edit-detail,
+.svga-edit-images {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.svga-edit-panel-title {
+  margin: 0;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.svga-edit-meta {
+  margin: 0;
+  padding: 8px 0;
+}
+
+.svga-edit-meta > div {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.svga-edit-meta > div:last-child {
+  border-bottom: 0;
+}
+
+.svga-edit-meta dt {
+  margin: 0;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.svga-edit-meta dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.svga-edit-options {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.svga-edit-layers {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+}
+
+.svga-edit-opt-hint {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.svga-edit-options-body {
+  padding: 12px 14px 14px;
+}
+
+.svga-edit-options-body .settings-group {
+  margin-bottom: 12px;
+}
+
+.svga-edit-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.svga-edit-color-row input[type="color"] {
+  width: 40px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  cursor: pointer;
+}
+
+.svga-edit-hint {
+  margin: 0;
+  padding: 6px 14px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.svga-edit-layer-list {
+  overflow-y: auto;
+  padding: 6px;
+  flex: 1;
+}
+
+.svga-edit-layer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  margin-bottom: 4px;
+}
+
+.svga-edit-layer-row.selected {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.svga-edit-layer-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+  cursor: pointer;
+}
+
+.svga-edit-layer-order {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.svga-edit-layer-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.svga-edit-layer-actions .studio-chip-btn {
+  padding: 4px 8px;
+  min-width: 28px;
+}
+
+.svga-edit-images {
+  max-height: 280px;
+}
+
+.svga-edit-images-head .svga-edit-panel-title {
+  border-bottom: 1px solid var(--border);
+}
+
+.svga-edit-image-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 6px;
+}
+
+.svga-edit-image-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.svga-edit-image-row:hover {
+  background: var(--bg-elevated);
+}
+
+.svga-edit-image-row.selected {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.svga-edit-thumb {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background:
+    linear-gradient(45deg, #1a2030 25%, transparent 25%),
+    linear-gradient(-45deg, #1a2030 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #1a2030 75%),
+    linear-gradient(-45deg, transparent 75%, #1a2030 75%);
+  background-size: 10px 10px;
+  background-position: 0 0, 0 5px, 5px -5px, -5px 0;
+  background-color: #0d1117;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.svga-edit-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.svga-edit-image-key {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.svga-edit-image-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.svga-edit-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.svga-edit-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.svga-edit-actions .convert-btn {
+  width: 100%;
+}
+
+@media (max-width: 960px) {
+  .svga-edit-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .svga-edit-images {
+    max-height: 320px;
+  }
+}

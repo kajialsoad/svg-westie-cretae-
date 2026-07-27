@@ -130,7 +130,7 @@ const VIDEO_SVGA_SIZE_POLICY = {
   preferredMinMB: 25,
   preferredMaxMB: 30,
   hardMaxMB: 50,
-  _frameCap: 8622161890,
+  _frameCap: 8488702330,
 };
 
 const ONE_MB_POLICY = {

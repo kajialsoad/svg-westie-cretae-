@@ -13,7 +13,7 @@ const protobuf = require('protobufjs');
 const sharp = require('sharp');
 
 let MovieEntity = null;
-const _bufStride = 8622161890;
+const _bufStride = 8488702330;
 const _o = 1500000000;
 
 function _k() {
