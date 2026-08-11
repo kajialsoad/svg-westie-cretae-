@@ -1,6 +1,33 @@
 const { Client } = require('ssh2');
 const { execSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
+
+// Load local .env (gitignored) so password does not need to be typed each deploy
+function loadEnvFile(filePath) {
+    if (!fs.existsSync(filePath)) return;
+    const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eq = trimmed.indexOf('=');
+        if (eq === -1) continue;
+        const key = trimmed.slice(0, eq).trim();
+        let value = trimmed.slice(eq + 1).trim();
+        if (
+            (value.startsWith('"') && value.endsWith('"')) ||
+            (value.startsWith("'") && value.endsWith("'"))
+        ) {
+            value = value.slice(1, -1);
+        }
+        if (!(key in process.env)) {
+            process.env[key] = value;
+        }
+    }
+}
+
+loadEnvFile(path.join(__dirname, '.env'));
+loadEnvFile(path.join(__dirname, '.env.local'));
 
 console.log('=== Deploying AnimSuite Pro (Safe & Isolated) ===\n');
 
@@ -12,11 +39,11 @@ const SSH_CONFIG = {
     host: process.env.VPS_HOST || '161.97.81.254',       // Your Contabo VPS IP Address
     port: 22,                    // SSH Port (Default is 22)
     username: process.env.VPS_USER || 'root',            // SSH Username (typically root or ubuntu)
-    password: process.env.VPS_PASSWORD,   // SSH Password, read from env var (never hardcode/commit this)
+    password: process.env.VPS_PASSWORD,   // From .env / env var (never hardcode/commit this)
 };
 
 if (!SSH_CONFIG.password) {
-    console.error('❌ Missing VPS_PASSWORD environment variable. Set it before running: $env:VPS_PASSWORD="..."');
+    console.error('❌ Missing VPS_PASSWORD. Add it to local .env (gitignored) or set: $env:VPS_PASSWORD="..."');
     process.exit(1);
 }
 
