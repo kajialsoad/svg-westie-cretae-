@@ -51,7 +51,19 @@ def _apply_bg(cut, mode, color, bg_img):
 
 
 def remove_image(data, mode="transparent", color="#FFFFFF", bg_bytes=None):
-    img = Image.open(io.BytesIO(data))
+    try:
+        img = Image.open(io.BytesIO(data))
+    except Exception:
+        import svga_codec
+        try:
+            frames, _, _, _ = svga_codec.render_frames(data, max_frames=1)
+            if frames:
+                img = frames[0]
+            else:
+                raise ValueError("Could not decode SVGA or image data")
+        except Exception as e:
+            raise ValueError(f"Invalid or unsupported image/SVGA file: {e}")
+
     cut = _cut(img)
     bg_img = Image.open(io.BytesIO(bg_bytes)) if bg_bytes else None
     result = _apply_bg(cut, mode, color, bg_img)

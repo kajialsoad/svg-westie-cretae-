@@ -84,7 +84,7 @@ function ImageRemover() {
   return (
     <div className="grid lg:grid-cols-2 gap-6">
       <div className="space-y-5">
-        <Dropzone accept="image/*" file={file} setFile={setFile} testid="image-dropzone" hint="PNG · JPG · WebP" />
+        <Dropzone accept="image/*,.svga" file={file} setFile={setFile} testid="image-dropzone" hint="PNG · JPG · WebP · SVGA" />
         <ModePicker mode={mode} setMode={setMode} color={color} setColor={setColor} bgFile={bgFile} setBgFile={setBgFile} />
         <button data-testid="remove-image-btn" onClick={run} disabled={busy}
           className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-2.5 font-medium transition-colors">

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Secure Admin Panel - Token Control</title>
+  <title>Secure Admin Panel - Master Control</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -25,16 +25,41 @@
       padding: 20px;
     }
     .container {
-      max-width: 1000px;
+      max-width: 1200px;
       margin: 0 auto;
     }
     .header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 30px;
+      margin-bottom: 20px;
       padding-bottom: 10px;
       border-bottom: 1px solid var(--border);
+    }
+    .tab-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .tab-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover {
+      color: var(--text-main);
+      border-color: var(--accent);
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
     }
     .card {
       background: var(--bg-card);
@@ -101,6 +126,19 @@
       text-align: center; width: 300px;
     }
     .hidden { display: none !important; }
+    .iframe-container {
+      width: 100%;
+      height: 750px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #000;
+    }
+    .iframe-container iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
   </style>
 </head>
 <body>
@@ -117,42 +155,63 @@
 
   <div class="container hidden" id="admin-content">
     <div class="header">
-      <h2>🔑 Token Management</h2>
+      <h2>🛡️ Master Admin Control</h2>
       <button onclick="logoutAdmin()">Logout</button>
     </div>
 
-    <div class="card">
-      <h3>Generate New Token</h3>
-      <div class="form-group">
-        <label>Validity (Days):</label>
-        <input type="number" id="expiry-days" value="30" min="1">
-        <button onclick="generateToken()">Generate Token</button>
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-token-btn" onclick="switchTab('token')">🔑 Token Management</button>
+      <button class="tab-btn" id="tab-svga-btn" onclick="switchTab('svga')">🎬 SVGA Studio Admin</button>
+    </div>
+
+    <!-- Tab 1: Token Management -->
+    <div id="tab-token" class="tab-content">
+      <div class="card">
+        <h3>Generate New Token</h3>
+        <div class="form-group">
+          <label>Validity (Days):</label>
+          <input type="number" id="expiry-days" value="30" min="1">
+          <button onclick="generateToken()">Generate Token</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>All Tokens</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Token String</th>
+              <th>Status</th>
+              <th>Created At</th>
+              <th>Expires At</th>
+              <th>Days Left</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tokens-list">
+            <!-- Tokens will be populated here -->
+          </tbody>
+        </table>
       </div>
     </div>
 
-    <div class="card">
-      <h3>All Tokens</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Token String</th>
-            <th>Status</th>
-            <th>Created At</th>
-            <th>Expires At</th>
-            <th>Days Left</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="tokens-list">
-          <!-- Tokens will be populated here -->
-        </tbody>
-      </table>
+    <!-- Tab 2: SVGA Studio Admin -->
+    <div id="tab-svga" class="tab-content hidden">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <p style="margin: 0; color: var(--text-muted); font-size: 14px;">Tanvir SVGA Studio Admin Dashboard (Showcase, FAQs, Stats)</p>
+        <a id="svga-external-link" href="#" target="_blank" style="color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 600;">
+          ↗ Open in New Window
+        </a>
+      </div>
+      <div class="iframe-container">
+        <iframe id="svga-admin-iframe" src="about:blank"></iframe>
+      </div>
     </div>
+
   </div>
 
   <script>
-    // Configuration: Point to your backend API URL
-    // Automatically detects if running locally (including local network IPs) or on production
+    // Configuration: Point to backend API URL
     const API_BASE_URL = window.location.port === '3001'
       ? `${window.location.protocol}//${window.location.hostname}:3000`
       : window.location.origin;
@@ -164,6 +223,27 @@
         document.getElementById('api-status').textContent = 'OFFLINE';
         document.getElementById('api-status').style.color = 'var(--danger)';
       });
+
+    function switchTab(tabName) {
+      document.getElementById('tab-token').classList.add('hidden');
+      document.getElementById('tab-svga').classList.add('hidden');
+      document.getElementById('tab-token-btn').classList.remove('active');
+      document.getElementById('tab-svga-btn').classList.remove('active');
+
+      if (tabName === 'token') {
+        document.getElementById('tab-token').classList.remove('hidden');
+        document.getElementById('tab-token-btn').classList.add('active');
+      } else if (tabName === 'svga') {
+        document.getElementById('tab-svga').classList.remove('hidden');
+        document.getElementById('tab-svga-btn').classList.add('active');
+        const svgaUrl = `${API_BASE_URL}/tanvir-svga/admin`;
+        const iframe = document.getElementById('svga-admin-iframe');
+        if (iframe.src === 'about:blank' || iframe.src !== svgaUrl) {
+          iframe.src = svgaUrl;
+        }
+        document.getElementById('svga-external-link').href = svgaUrl;
+      }
+    }
   </script>
   <script src="js/admin.js"></script>
 </body>

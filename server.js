@@ -56,6 +56,9 @@ app.get('/tanvir-svga*', (req, res) => {
   res.sendFile(path.join(targetDir, 'index.html'));
 });
 
+// Serve Master Admin Panel
+app.use('/admin-panel', express.static(path.join(__dirname, 'admin-panel')));
+
 // Default static serving for the main website.
 // Disable caching for HTML/JS/CSS so code updates are picked up immediately
 // (prevents the browser from running a stale app.js).

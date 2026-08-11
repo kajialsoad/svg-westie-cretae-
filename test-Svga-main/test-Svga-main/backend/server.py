@@ -21,15 +21,61 @@ from bson import ObjectId
 
 import auth as auth_mod
 import storage as storage_mod
+import compression
 import conversions
 import svga_codec
 import bgremove
 
 mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
-client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=2000)
+client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=1000)
 db = client[os.environ.get('DB_NAME', 'svgastudio')]
 APP_NAME = os.environ.get("APP_NAME", "svgastudio")
-BG_JOBS_DIR = "/tmp/bgjobs"
+BG_JOBS_DIR = os.path.join(os.path.dirname(__file__), "bgjobs")
+
+_MEMORY_BG_JOBS = {}
+_MEMORY_JOBS = {}
+
+class SafeCollection:
+    def __init__(self, real_coll, memory_dict):
+        self.real_coll = real_coll
+        self.memory_dict = memory_dict
+
+    async def insert_one(self, doc):
+        doc_id = str(doc.get("_id", uuid.uuid4().hex))
+        doc["_id"] = doc_id
+        self.memory_dict[doc_id] = dict(doc)
+        try:
+            return await self.real_coll.insert_one(doc)
+        except Exception as e:
+            class FakeResult:
+                inserted_id = doc_id
+            return FakeResult()
+
+    async def update_one(self, filter_q, update_q, upsert=False):
+        doc_id = filter_q.get("_id")
+        if doc_id and doc_id in self.memory_dict:
+            target = self.memory_dict[doc_id]
+            if "$set" in update_q:
+                target.update(update_q["$set"])
+        try:
+            return await self.real_coll.update_one(filter_q, update_q, upsert=upsert)
+        except Exception as e:
+            return None
+
+    async def find_one(self, filter_q):
+        doc_id = filter_q.get("_id")
+        try:
+            res = await self.real_coll.find_one(filter_q)
+            if res:
+                return res
+        except Exception as e:
+            pass
+        if doc_id and doc_id in self.memory_dict:
+            return self.memory_dict[doc_id]
+        return None
+
+bg_jobs_coll = SafeCollection(db.bg_jobs, _MEMORY_BG_JOBS)
+jobs_coll = SafeCollection(db.jobs, _MEMORY_JOBS)
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -152,13 +198,18 @@ async def preview_info(file: UploadFile = File(...)):
 
 # ---------------- convert ----------------
 @api_router.post("/convert/{kind}")
-async def convert(kind: str, file: UploadFile = File(...)):
+async def convert(kind: str, file: UploadFile = File(...),
+                  tier: str = Form("standard"), one_mb: str = Form("false")):
     if kind not in conversions.CONVERSIONS:
         raise HTTPException(status_code=404, detail="Unknown conversion")
     data = await file.read()
     src_ext = (file.filename.rsplit(".", 1)[-1] if "." in (file.filename or "") else "mp4").lower()
+    tier = compression.normalize_tier(tier)
+    one_mb_mode = compression.is_one_mb_mode_enabled(one_mb)
     try:
-        result, out_ext, mime = conversions.convert(kind, data, src_ext)
+        # Conversions are CPU bound; keep them off the event loop.
+        result, out_ext, mime = await asyncio.get_event_loop().run_in_executor(
+            None, conversions.convert, kind, data, src_ext, tier, one_mb_mode)
     except Exception as e:
         logger.exception("convert failed")
         raise HTTPException(status_code=400, detail=f"Conversion failed: {str(e)[:200]}")
@@ -195,7 +246,7 @@ async def bg_video_submit(file: UploadFile = File(...), mode: str = Form("transp
     bg_bytes = await background.read() if background is not None else None
     job_id = uuid.uuid4().hex
     base = (file.filename.rsplit(".", 1)[0] if file.filename else "video")
-    await db.bg_jobs.insert_one({
+    await bg_jobs_coll.insert_one({
         "_id": job_id, "status": "processing", "mode": mode, "base": base,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
@@ -215,18 +266,18 @@ async def _run_bg_video(job_id, data, src_ext, mode, color, bg_bytes):
         path = os.path.join(BG_JOBS_DIR, f"{job_id}.{ext}")
         with open(path, "wb") as f:
             f.write(result)
-        await db.bg_jobs.update_one({"_id": job_id},
+        await bg_jobs_coll.update_one({"_id": job_id},
                                     {"$set": {"status": "done", "ext": ext, "mime": mime, "path": path}})
         await _bump("bg_videos")
     except Exception as e:
         logger.exception("bg video job failed")
-        await db.bg_jobs.update_one({"_id": job_id},
+        await bg_jobs_coll.update_one({"_id": job_id},
                                     {"$set": {"status": "error", "error": str(e)[:200]}})
 
 
 @api_router.get("/bg/video/status/{job_id}")
 async def bg_video_status(job_id: str):
-    job = await db.bg_jobs.find_one({"_id": job_id})
+    job = await bg_jobs_coll.find_one({"_id": job_id})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return {"status": job["status"], "ext": job.get("ext"), "error": job.get("error")}
@@ -234,7 +285,7 @@ async def bg_video_status(job_id: str):
 
 @api_router.get("/bg/video/result/{job_id}")
 async def bg_video_result(job_id: str):
-    job = await db.bg_jobs.find_one({"_id": job_id})
+    job = await bg_jobs_coll.find_one({"_id": job_id})
     if not job or job.get("status") != "done":
         raise HTTPException(status_code=404, detail="Result not ready")
     if not job.get("path") or not os.path.exists(job["path"]):
@@ -263,17 +314,17 @@ async def _run_job(job_id, worker, args):
         path = os.path.join(BG_JOBS_DIR, f"{job_id}.{ext}")
         with open(path, "wb") as f:
             f.write(result)
-        await db.jobs.update_one({"_id": job_id},
+        await jobs_coll.update_one({"_id": job_id},
                                  {"$set": {"status": "done", "ext": ext, "mime": mime, "path": path,
                                            "size": len(result)}})
     except Exception as e:
         logger.exception("job failed")
-        await db.jobs.update_one({"_id": job_id}, {"$set": {"status": "error", "error": str(e)[:200]}})
+        await jobs_coll.update_one({"_id": job_id}, {"$set": {"status": "error", "error": str(e)[:200]}})
 
 
 async def _create_job(jtype, base, worker, *args):
     job_id = uuid.uuid4().hex
-    await db.jobs.insert_one({"_id": job_id, "type": jtype, "status": "processing", "base": base,
+    await jobs_coll.insert_one({"_id": job_id, "type": jtype, "status": "processing", "base": base,
                              "created_at": datetime.now(timezone.utc).isoformat()})
     asyncio.get_event_loop().create_task(_run_job(job_id, worker, args))
     return job_id
@@ -281,12 +332,15 @@ async def _create_job(jtype, base, worker, *args):
 
 @api_router.post("/jobs/mp4-to-svga")
 async def job_mp4_to_svga(file: UploadFile = File(...), remove_bg: str = Form("false"),
-                          preset: str = Form("balanced")):
+                          preset: str = Form("balanced"), tier: str = Form(""),
+                          one_mb: str = Form("false")):
     data = await file.read()
     ext = (file.filename.rsplit(".", 1)[-1] if "." in (file.filename or "") else "mp4").lower()
     base = (file.filename.rsplit(".", 1)[0] if file.filename else "video")
     rb = remove_bg.lower() in ("1", "true", "yes", "on")
-    job_id = await _create_job("mp4-to-svga", base, conversions.mp4_to_svga_advanced, data, ext, rb, preset)
+    job_id = await _create_job("mp4-to-svga", base, conversions.mp4_to_svga_advanced,
+                               data, ext, rb, preset, tier or None,
+                               compression.is_one_mb_mode_enabled(one_mb))
     await _bump("conversions")
     await _bump("convert_mp4_to_svga")
     return {"job_id": job_id, "status": "processing"}
@@ -294,22 +348,40 @@ async def job_mp4_to_svga(file: UploadFile = File(...), remove_bg: str = Form("f
 
 @api_router.post("/jobs/svga-export")
 async def job_svga_export(file: UploadFile = File(...), edits: str = Form("{}"),
-                          target: str = Form("gif")):
+                          target: str = Form("gif"), tier: str = Form("standard"),
+                          one_mb: str = Form("false")):
     data = await file.read()
     base = (file.filename.rsplit(".", 1)[0] if file.filename else "svga")
     try:
         edits_obj = json.loads(edits or "{}")
     except Exception:
         edits_obj = {}
-    job_id = await _create_job("svga-export", base, conversions.svga_export, data, edits_obj, target)
+    job_id = await _create_job("svga-export", base, conversions.svga_export,
+                               data, edits_obj, target,
+                               compression.normalize_tier(tier),
+                               compression.is_one_mb_mode_enabled(one_mb))
     await _bump("conversions")
     await _bump(f"convert_svga_to_{target.replace('-', '_')}")
     return {"job_id": job_id, "status": "processing"}
 
 
+@api_router.get("/tiers")
+async def list_tiers():
+    """Expose the compression tiers so the UI can offer a size target."""
+    return {
+        "tiers": [
+            {"id": key, "label": cfg["label"], "maxSizeMB": cfg["maxSizeMB"],
+             "resolution": cfg["resolution"], "fpsRange": list(cfg["fpsRange"])}
+            for key, cfg in compression.SIZE_TIERS.items()
+        ],
+        "oneMb": {"label": compression.ONE_MB_POLICY["label"],
+                  "targetSizeMB": compression.ONE_MB_POLICY["targetSizeMB"]},
+    }
+
+
 @api_router.get("/jobs/{job_id}/status")
 async def job_status(job_id: str):
-    job = await db.jobs.find_one({"_id": job_id})
+    job = await jobs_coll.find_one({"_id": job_id})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return {"status": job["status"], "ext": job.get("ext"), "size": job.get("size"), "error": job.get("error")}
@@ -317,7 +389,7 @@ async def job_status(job_id: str):
 
 @api_router.get("/jobs/{job_id}/result")
 async def job_result(job_id: str):
-    job = await db.jobs.find_one({"_id": job_id})
+    job = await jobs_coll.find_one({"_id": job_id})
     if not job or job.get("status") != "done":
         raise HTTPException(status_code=404, detail="Result not ready")
     if not job.get("path") or not os.path.exists(job["path"]):
