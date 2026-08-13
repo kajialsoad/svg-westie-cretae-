@@ -302,20 +302,34 @@
   }
 }
 
-/* ===== SVGA Editing (default tool layout) ===== */
+/* ===== SVGA Editing — left preview / right detail + assets ===== */
 .svga-edit-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(300px, 380px);
-  gap: 20px;
+  grid-template-columns: minmax(0, 1.5fr) minmax(300px, 380px);
+  gap: 0;
   align-items: stretch;
-  min-height: 560px;
+  min-height: 620px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .svga-edit-preview-col {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   min-width: 0;
+  background: #14161c;
+  border-right: 1px solid var(--border);
+}
+
+.svga-inspector-main-head {
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
 }
 
 .svga-edit-layer-wrap {
@@ -338,38 +352,48 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
+  background: #1a1d24;
   border: 0;
-  overflow: visible;
+  overflow: hidden;
   touch-action: none;
+  padding: 16px;
 }
 
 .svga-edit-filebar {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+  padding: 8px 16px;
   font-size: 12px;
   color: var(--text-muted);
+  border-top: 1px solid var(--border);
 }
 
 .svga-edit-playback {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  padding: 0 16px 14px;
 }
 
 .svga-edit-side {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 0;
   min-height: 0;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--bg-card);
 }
 
 .svga-edit-detail,
-.svga-edit-images {
+.svga-edit-images,
+.svga-edit-layers,
+.svga-edit-options {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
   overflow: hidden;
 }
 
@@ -415,19 +439,21 @@
 
 .svga-edit-options {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
   overflow: hidden;
 }
 
 .svga-edit-layers {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  max-height: 260px;
+  max-height: 180px;
 }
 
 .svga-edit-opt-hint {
@@ -528,8 +554,88 @@
   max-height: 280px;
 }
 
+.svga-edit-images {
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  flex: 1;
+}
+
 .svga-edit-images-head .svga-edit-panel-title {
   border-bottom: 1px solid var(--border);
+}
+
+.svga-asset-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 10px;
+  overflow-y: auto;
+  flex: 1;
+  max-height: 360px;
+}
+
+.svga-asset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.svga-asset-card:hover {
+  background: var(--bg-elevated);
+}
+
+.svga-asset-card.selected {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.svga-asset-thumb {
+  height: 92px;
+  border-radius: 4px;
+  background:
+    linear-gradient(45deg, #252830 25%, transparent 25%),
+    linear-gradient(-45deg, #252830 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #252830 75%),
+    linear-gradient(-45deg, transparent 75%, #252830 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+  background-color: #12141a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.svga-asset-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.svga-asset-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.svga-asset-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 0 4px 6px;
+  font-variant-numeric: tabular-nums;
 }
 
 .svga-edit-image-list {
@@ -600,7 +706,32 @@
   margin-top: 2px;
 }
 
-.svga-edit-empty {
+.svga-edit-stage-hint {
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: center;
+  padding: 2rem 1.5rem;
+  pointer-events: none;
+}
+
+.svga-edit-stage.is-drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -8px;
+}
+
+.svga-edit-lib-actions {
+  padding: 8px 14px 4px;
+}
+
+.svga-asset-add {
+  margin: 0 4px 8px;
+  width: calc(100% - 8px);
+  font-size: 11px;
+}
+
+.svga-asset-card[draggable="true"] {
+  cursor: grab;
+}
   padding: 24px;
   text-align: center;
   color: var(--text-muted);
@@ -611,6 +742,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding: 12px 14px 16px;
 }
 
 .svga-edit-actions .convert-btn {
@@ -622,7 +754,167 @@
     grid-template-columns: 1fr;
   }
 
+  .svga-edit-preview-col {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .svga-edit-side {
+    max-height: none;
+  }
+
   .svga-edit-images {
-    max-height: 320px;
+    max-height: 360px;
+  }
+}
+
+.vap-hidden-source {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.vap-alpha-canvas {
+  max-width: 100%;
+  max-height: 360px;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.studio-progress {
+  margin: 12px 0;
+}
+
+.studio-progress-track {
+  height: 8px;
+  border-radius: 99px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.studio-progress-bar {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+}
+
+.studio-progress-label {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.studio-result-preview {
+  margin-top: 12px;
+}
+
+.studio-result-preview img,
+.studio-result-preview video {
+  max-width: 100%;
+  max-height: 240px;
+  display: block;
+  border-radius: 8px;
+}
+
+.studio-dl-list {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.studio-dl-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+
+.studio-dl-item strong {
+  color: var(--text-primary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.svga-replace-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.svga-replace-tile {
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  padding: 6px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.svga-replace-tile.selected {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.svga-replace-tile img {
+  width: 100%;
+  height: 48px;
+  object-fit: contain;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.multi-svga-grid.list-view {
+  flex-direction: column;
+}
+
+.multi-svga-grid.list-view .multi-svga-card {
+  width: 100%;
+  max-width: none;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.multi-card-controls {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 10px;
+  flex-wrap: wrap;
+}
+
+.theme-toggle {
+  margin-left: 12px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .studio-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .header-nav {
+    display: none;
   }
 }

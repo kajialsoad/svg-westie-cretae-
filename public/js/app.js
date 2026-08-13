@@ -58,6 +58,9 @@ function navigateTo(page) {
   });
 
   if (page === 'home') renderHistory();
+  if (page === 'svga-edit' && typeof studioEditRenderLibrary === 'function') {
+    studioEditRenderLibrary();
+  }
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -1172,7 +1175,21 @@ function clearHistory() {
 }
 
 // ===== INIT =====
+function applyTheme(theme) {
+  const next = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('aspro_theme', next);
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = next === 'light' ? 'Dark' : 'Light';
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(current === 'light' ? 'dark' : 'light');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  applyTheme(localStorage.getItem('aspro_theme') || 'dark');
   checkHealth();
   renderHistory();
   navigateTo('home');

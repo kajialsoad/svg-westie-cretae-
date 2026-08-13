@@ -11,10 +11,25 @@ const fs = require('fs');
 const os = require('os');
 const sharp = require('sharp');
 
+const rateHits = new Map();
+router.use((req, res, next) => {
+  if (req.method === 'GET') return next();
+  const key = String(req.ip || 'local') + ':' + req.path;
+  const now = Date.now();
+  const recent = (rateHits.get(key) || []).filter((t) => now - t < 60000);
+  if (recent.length >= 40) {
+    return res.status(429).json({ error: 'Too many requests. Please wait a minute.' });
+  }
+  recent.push(now);
+  rateHits.set(key, recent);
+  next();
+});
+
 const svgaService = require('../services/svga');
 const svgaRenderer = require('../services/svgaRenderer');
 const ffmpegService = require('../services/ffmpeg');
 const compression = require('../services/compression');
+const vapService = require('../services/vap');
 
 const toFixedSafe = (value, digits = 2, fallback = '0.00') => (
   Number.isFinite(value) ? value.toFixed(digits) : fallback
@@ -680,7 +695,7 @@ router.post('/convert/svga', upload.fields([
     console.error('SVGA Conversion error:', err);
     ffmpegService.cleanupTempDir(tempDir);
     jobs.set(jobId, { id: jobId, status: 'error', error: err.message });
-    res.status(500).json({ error: err.message, stack: err.stack, jobId });
+    res.status(500).json({ error: err.message, jobId });
   }
 });
 
@@ -726,7 +741,7 @@ router.post('/convert/video-svga', upload.single('file'), async (req, res) => {
     const videoInfo = await ffmpegService.getVideoInfo(inputPath);
 
     // Limit duration
-    if (videoInfo.duration > 15) {
+    if (videoInfo.duration > 10) {
       throw new Error('Video too long. Maximum 10 seconds allowed.');
     }
 
@@ -1274,7 +1289,7 @@ router.get('/download/:jobId', (req, res) => {
       console.log('Cleaning up job:', req.params.jobId);
       jobs.delete(req.params.jobId);
       cleanupTimers.delete(req.params.jobId);
-    }, 60000);
+    }, 300000);
     cleanupTimers.set(req.params.jobId, cleanupTimer);
   }
 });
@@ -1288,7 +1303,7 @@ router.post('/convert/compose-svga', upload.array('files', 20), async (req, res)
 
   try {
     if (!req.files || req.files.length < 1) {
-      return res.status(400).json({ error: 'Upload at least one .svga file' });
+      return res.status(400).json({ error: 'Upload at least one image or .svga file' });
     }
 
     jobs.set(jobId, {
@@ -1300,12 +1315,25 @@ router.post('/convert/compose-svga', upload.array('files', 20), async (req, res)
 
     const layers = [];
     for (const file of req.files) {
-      const movieData = await svgaService.parseSVGA(file.buffer);
-      layers.push({
-        name: file.originalname,
-        movieData,
-        images: movieData.images || {},
-      });
+      const name = (file.originalname || '').toLowerCase();
+      const isImage = /\.(png|jpe?g|webp|gif)$/.test(name) || (file.mimetype || '').startsWith('image/');
+      if (isImage && !name.endsWith('.svga')) {
+        const png = await sharp(file.buffer).ensureAlpha().png().toBuffer();
+        const meta = await sharp(png).metadata();
+        layers.push({
+          name: file.originalname,
+          staticPng: png,
+          width: meta.width || 300,
+          height: meta.height || 300,
+        });
+      } else {
+        const movieData = await svgaService.parseSVGA(file.buffer);
+        layers.push({
+          name: file.originalname,
+          movieData,
+          images: movieData.images || {},
+        });
+      }
     }
 
     jobs.set(jobId, { ...jobs.get(jobId), step: 'Compositing frames...', progress: 40 });
@@ -1334,12 +1362,13 @@ router.post('/convert/compose-svga', upload.array('files', 20), async (req, res)
     const filename = `composed_${Date.now()}.svga`;
     jobs.set(jobId, {
       id: jobId,
-      status: 'done',
+      status: 'complete',
       progress: 100,
-      filename,
-      mimetype: 'application/octet-stream',
-      size: outputBuffer.length,
-      buffer: outputBuffer,
+      result: {
+        filename,
+        mimetype: 'application/octet-stream',
+        buffer: outputBuffer,
+      },
       createdAt: Date.now(),
       meta: {
         width: composed.width,
@@ -1362,6 +1391,341 @@ router.post('/convert/compose-svga', upload.array('files', 20), async (req, res)
     console.error('[compose-svga]', err);
     jobs.set(jobId, { id: jobId, status: 'error', error: err.message });
     res.status(500).json({ error: err.message, jobId });
+  }
+});
+
+function finishJob(jobId, result) {
+  jobs.set(jobId, {
+    id: jobId,
+    status: 'complete',
+    progress: 100,
+    result,
+    createdAt: Date.now(),
+  });
+}
+
+function resolutionCap(value) {
+  if (!value || value === 'original') return 0;
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * POST /api/convert/vap-info
+ * Probe VAP / alpha MP4 metadata
+ */
+router.post('/convert/vap-info', upload.single('file'), async (req, res) => {
+  const jobId = uuidv4();
+  const tempDir = ffmpegService.createTempDir(jobId);
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No video uploaded' });
+    }
+    const inputPath = path.join(tempDir, 'input' + (path.extname(req.file.originalname || '') || '.mp4'));
+    fs.writeFileSync(inputPath, req.file.buffer);
+    const info = await vapService.probeVap(inputPath);
+    res.json({ success: true, ...info });
+  } catch (err) {
+    console.error('[vap-info]', err);
+    res.status(500).json({ error: err.message || 'Could not read video' });
+  } finally {
+    ffmpegService.cleanupTempDir(tempDir);
+  }
+});
+
+/**
+ * POST /api/convert/vap
+ * VAP/MP4 → SVGA | animated WebP | VAP MP4
+ */
+router.post('/convert/vap', upload.single('file'), async (req, res) => {
+  const jobId = uuidv4();
+  const tempDir = ffmpegService.createTempDir(jobId);
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No video uploaded' });
+    }
+
+    const format = String(req.body.format || 'svga').toLowerCase();
+    if (!['svga', 'webp', 'vap'].includes(format)) {
+      return res.status(400).json({ error: 'Format must be svga, webp, or vap' });
+    }
+
+    jobs.set(jobId, { id: jobId, status: 'processing', step: 'Reading video...', progress: 8 });
+
+    const inputPath = path.join(tempDir, 'input' + (path.extname(req.file.originalname || '') || '.mp4'));
+    fs.writeFileSync(inputPath, req.file.buffer);
+    const info = await vapService.probeVap(inputPath);
+    const keepAlpha = req.body.keepAlpha !== '0' && req.body.keepAlpha !== 'false';
+    let layout = req.body.layout || info.layout;
+    if (!keepAlpha) layout = 'none';
+    if (layout === 'auto') layout = info.layout;
+
+    const quality = req.body.quality || 'medium';
+    const preset = vapService.qualityPreset(quality);
+    const fps = Math.max(1, Math.min(60, parseInt(req.body.fps, 10) || Math.min(info.fps, preset.fpsCap)));
+    const resCap = resolutionCap(req.body.resolution);
+    const maxDim = resCap || vapService.resolveMaxDim(req.body.resolution, quality);
+
+    jobs.set(jobId, { ...jobs.get(jobId), step: 'Extracting frames...', progress: 25 });
+    const rgbaDir = path.join(tempDir, 'rgba');
+    const extracted = await vapService.extractRgbaFrames(inputPath, rgbaDir, {
+      fps,
+      layout,
+      maxDim,
+    });
+
+    const removeBgParam = String(req.body.removeBg || '').toLowerCase();
+    const removeBg = removeBgParam === '1' || removeBgParam === 'true' || removeBgParam === 'yes';
+    let encodeDir = rgbaDir;
+    let encodePrefix = 'vap_';
+
+    if (format === 'vap' && removeBg && layout === 'none') {
+      jobs.set(jobId, { ...jobs.get(jobId), step: 'Removing background...', progress: 48 });
+      const processedDir = path.join(tempDir, 'processed');
+      const allowedBg = new Set(['green', 'black', 'white', 'transparent', 'nobackground']);
+      let bgColor = String(req.body.bgColor || 'transparent').toLowerCase();
+      if (!allowedBg.has(bgColor)) bgColor = 'transparent';
+      await ffmpegService.removeBackgroundBatch(extracted.files, processedDir, {
+        outputBg: bgColor,
+        keyColor: 'auto',
+      });
+      encodeDir = processedDir;
+      encodePrefix = 'processed_';
+    }
+
+    if (format === 'svga') {
+      jobs.set(jobId, { ...jobs.get(jobId), step: 'Encoding SVGA...', progress: 70 });
+      const frames = [];
+      for (const file of extracted.files) {
+        frames.push({ imageBuffer: fs.readFileSync(file) });
+      }
+      const outputBuffer = await svgaService.encodeSVGA(frames, {
+        width: extracted.width,
+        height: extracted.height,
+        fps: extracted.fps,
+      });
+      const filename = `vap_${Date.now()}.svga`;
+      finishJob(jobId, {
+        filename,
+        mimetype: 'application/octet-stream',
+        buffer: outputBuffer,
+      });
+      return res.json({
+        success: true,
+        jobId,
+        filename,
+        size: outputBuffer.length,
+        downloadUrl: `/api/download/${jobId}`,
+        meta: { width: extracted.width, height: extracted.height, fps: extracted.fps, frames: frames.length, layout },
+      });
+    }
+
+    if (format === 'webp') {
+      jobs.set(jobId, { ...jobs.get(jobId), step: 'Encoding WebP...', progress: 70 });
+      const outputPath = path.join(tempDir, 'out.webp');
+      await ffmpegService.framesToWebPSequence(rgbaDir, 'vap_', outputPath, {
+        fps: extracted.fps,
+        quality: preset.webpQuality,
+        loop: 0,
+        lossless: false,
+        alphaQuality: keepAlpha ? 100 : 80,
+      });
+      const outputBuffer = fs.readFileSync(outputPath);
+      const filename = `vap_${Date.now()}.webp`;
+      finishJob(jobId, {
+        filename,
+        mimetype: 'image/webp',
+        buffer: outputBuffer,
+      });
+      return res.json({
+        success: true,
+        jobId,
+        filename,
+        size: outputBuffer.length,
+        downloadUrl: `/api/download/${jobId}`,
+        meta: { width: extracted.width, height: extracted.height, fps: extracted.fps, frames: extracted.files.length, layout },
+      });
+    }
+
+    jobs.set(jobId, { ...jobs.get(jobId), step: 'Encoding VAP MP4...', progress: 70 });
+    const outputPath = path.join(tempDir, 'out.mp4');
+    const bitrateMbps = Math.max(1, parseInt(req.body.bitrate, 10) || preset.bitrateMbps);
+    await vapService.encodeVapMp4(encodeDir, encodePrefix, outputPath, {
+      fps: extracted.fps,
+      bitrateMbps,
+      keepAlpha,
+    });
+    const outputBuffer = fs.readFileSync(outputPath);
+    const filename = `vap_${Date.now()}.mp4`;
+    finishJob(jobId, {
+      filename,
+      mimetype: 'video/mp4',
+      buffer: outputBuffer,
+    });
+    res.json({
+      success: true,
+      jobId,
+      filename,
+      size: outputBuffer.length,
+      downloadUrl: `/api/download/${jobId}`,
+      meta: { width: extracted.width, height: extracted.height, fps: extracted.fps, frames: extracted.files.length, layout },
+    });
+  } catch (err) {
+    console.error('[convert/vap]', err);
+    jobs.set(jobId, { id: jobId, status: 'error', error: err.message });
+    res.status(500).json({ error: err.message || 'VAP conversion failed', jobId });
+  } finally {
+    ffmpegService.cleanupTempDir(tempDir);
+  }
+});
+
+/**
+ * POST /api/convert/svga-vap
+ * SVGA → VAP MP4 (left alpha + right RGB)
+ */
+router.post('/convert/svga-vap', upload.single('file'), async (req, res) => {
+  const jobId = uuidv4();
+  const tempDir = ffmpegService.createTempDir(jobId);
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No SVGA uploaded' });
+    }
+    jobs.set(jobId, { id: jobId, status: 'processing', step: 'Parsing SVGA...', progress: 10 });
+    const movieData = await svgaService.parseSVGA(req.file.buffer);
+    const params = movieData.params || {};
+    const fps = Math.max(1, Math.min(60, parseInt(req.body.fps, 10) || params.fps || 20));
+    const bitrateMbps = Math.max(1, parseInt(req.body.bitrate, 10) || 4);
+    const keepAlpha = req.body.keepAlpha !== '0' && req.body.keepAlpha !== 'false';
+    const resCap = resolutionCap(req.body.resolution);
+
+    jobs.set(jobId, { ...jobs.get(jobId), step: 'Rendering frames...', progress: 35 });
+    const framesDir = path.join(tempDir, 'frames');
+    const rendered = await svgaRenderer.renderFramesToDirectory(
+      movieData,
+      movieData.images || {},
+      framesDir
+    );
+
+    let encodeDir = framesDir;
+    let prefix = 'frame_';
+    if (resCap > 0 && (rendered.width > resCap || rendered.height > resCap)) {
+      encodeDir = path.join(tempDir, 'scaled');
+      fs.mkdirSync(encodeDir, { recursive: true });
+      const scale = resCap / Math.max(rendered.width, rendered.height);
+      const w = Math.max(2, Math.round(rendered.width * scale));
+      const h = Math.max(2, Math.round(rendered.height * scale));
+      for (let i = 0; i < rendered.framePaths.length; i++) {
+        const dest = path.join(encodeDir, `frame_${String(i + 1).padStart(4, '0')}.png`);
+        await sharp(rendered.framePaths[i]).resize(w, h, { fit: 'fill' }).png().toFile(dest);
+      }
+    }
+
+    jobs.set(jobId, { ...jobs.get(jobId), step: 'Encoding VAP MP4...', progress: 75 });
+    const outputPath = path.join(tempDir, 'out.mp4');
+    await vapService.encodeVapMp4(encodeDir, prefix, outputPath, {
+      fps,
+      bitrateMbps,
+      keepAlpha,
+    });
+    const outputBuffer = fs.readFileSync(outputPath);
+    const filename = `svga_${Date.now()}.mp4`;
+    finishJob(jobId, {
+      filename,
+      mimetype: 'video/mp4',
+      buffer: outputBuffer,
+    });
+    res.json({
+      success: true,
+      jobId,
+      filename,
+      size: outputBuffer.length,
+      downloadUrl: `/api/download/${jobId}`,
+      meta: { fps, bitrateMbps, frames: rendered.totalFrames, keepAlpha },
+    });
+  } catch (err) {
+    console.error('[svga-vap]', err);
+    jobs.set(jobId, { id: jobId, status: 'error', error: err.message });
+    res.status(500).json({ error: err.message || 'SVGA to VAP failed', jobId });
+  } finally {
+    ffmpegService.cleanupTempDir(tempDir);
+  }
+});
+
+/**
+ * POST /api/convert/svga-inspect
+ */
+router.post('/convert/svga-inspect', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No SVGA uploaded' });
+    }
+    const info = await svgaService.inspectSVGA(req.file.buffer);
+    res.json({ success: true, ...info });
+  } catch (err) {
+    console.error('[svga-inspect]', err);
+    res.status(500).json({ error: err.message || 'Could not inspect SVGA' });
+  }
+});
+
+/**
+ * POST /api/convert/svga-patch
+ * Replace images, text, hide layers, trim frames, change fps
+ */
+router.post('/convert/svga-patch', upload.fields([
+  { name: 'file', maxCount: 1 },
+  { name: 'replacements', maxCount: 40 },
+]), async (req, res) => {
+  const jobId = uuidv4();
+  try {
+    const svgaFile = req.files && req.files.file ? req.files.file[0] : null;
+    if (!svgaFile) {
+      return res.status(400).json({ error: 'No SVGA uploaded' });
+    }
+    jobs.set(jobId, { id: jobId, status: 'processing', step: 'Patching SVGA...', progress: 30 });
+
+    let keys = [];
+    try {
+      keys = JSON.parse(req.body.replaceKeys || '[]');
+    } catch (_) {
+      keys = [];
+    }
+    const replacementFiles = (req.files && req.files.replacements) || [];
+    const replacements = {};
+    replacementFiles.forEach((file, i) => {
+      const key = keys[i];
+      if (key) replacements[key] = file.buffer;
+    });
+
+    let hideKeys = [];
+    let textOverlays = [];
+    try { hideKeys = JSON.parse(req.body.hideKeys || '[]'); } catch (_) {}
+    try { textOverlays = JSON.parse(req.body.textOverlays || '[]'); } catch (_) {}
+
+    const outputBuffer = await svgaService.patchSVGA(svgaFile.buffer, {
+      replacements,
+      hideKeys,
+      textOverlays,
+      fps: req.body.fps,
+      startFrame: req.body.startFrame,
+      endFrame: req.body.endFrame,
+    });
+    const filename = `edited_${Date.now()}.svga`;
+    finishJob(jobId, {
+      filename,
+      mimetype: 'application/octet-stream',
+      buffer: outputBuffer,
+    });
+    res.json({
+      success: true,
+      jobId,
+      filename,
+      size: outputBuffer.length,
+      downloadUrl: `/api/download/${jobId}`,
+    });
+  } catch (err) {
+    console.error('[svga-patch]', err);
+    jobs.set(jobId, { id: jobId, status: 'error', error: err.message });
+    res.status(500).json({ error: err.message || 'SVGA patch failed', jobId });
   }
 });
 

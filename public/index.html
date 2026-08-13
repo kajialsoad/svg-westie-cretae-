@@ -12,9 +12,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=1.4">
+  <link rel="stylesheet" href="/css/style.css?v=1.5">
   <link rel="stylesheet" href="/css/token.css?v=1.1">
-  <link rel="stylesheet" href="/css/studio.css?v=2.1">
+  <link rel="stylesheet" href="/css/studio.css?v=2.7">
 </head>
 
 <body>
@@ -73,6 +73,7 @@
         <span class="status-dot"></span>
         <span class="status-text">Checking...</span>
       </div>
+      <button type="button" class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">Light</button>
     </div>
   </header>
 
@@ -160,7 +161,7 @@
             </svg>
           </div>
           <h3 class="card-title">SVGA Editing</h3>
-          <p class="card-desc">Replace images, edit text/color, speed, scale, layers &amp; frames — export new SVGA</p>
+          <p class="card-desc">Upload images or SVGA, drag onto the large preview, arrange a layout, export one SVGA</p>
           <div class="card-tags">
             <span class="tag">Layers</span>
             <span class="tag">Gift / Entry</span>
@@ -179,12 +180,32 @@
               <rect x="26" y="18" width="12" height="12" rx="2" fill="currentColor" opacity="0.35" />
             </svg>
           </div>
-          <h3 class="card-title">VAP MP4</h3>
-          <p class="card-desc">Open alpha video (VAP), preview with transparent BG, play/pause &amp; export</p>
+          <h3 class="card-title">MP4 → VAP MP4</h3>
+          <p class="card-desc">Convert normal MP4 to AlphaPlayer VAP (left alpha + right RGB), with optional BG remove</p>
           <div class="card-tags">
+            <span class="tag">MP4 → VAP</span>
             <span class="tag">Alpha Channel</span>
-            <span class="tag">VIP / Entry</span>
-            <span class="tag">Transparent</span>
+            <span class="tag">Gift / Entry</span>
+          </div>
+          <div class="card-arrow">→</div>
+        </div>
+
+        <!-- Card: MP4 → VAP MP4 -->
+        <div class="module-card" onclick="navigateTo('mp4-vap')" id="card-mp4-vap">
+          <div class="card-icon">
+            <svg viewBox="0 0 48 48" fill="none">
+              <rect x="4" y="12" width="18" height="24" rx="3" stroke="currentColor" stroke-width="2" />
+              <path d="M26 24h8M30 18l8 6-8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              <rect x="38" y="12" width="6" height="24" rx="1" stroke="currentColor" stroke-width="2" />
+              <rect x="32" y="12" width="6" height="24" rx="1" stroke="currentColor" stroke-width="2" opacity="0.45" />
+            </svg>
+          </div>
+          <h3 class="card-title">MP4 → VAP MP4</h3>
+          <p class="card-desc">Convert a normal MP4 into AlphaPlayer VAP (left alpha + right RGB), with optional background remove</p>
+          <div class="card-tags">
+            <span class="tag">MP4 In</span>
+            <span class="tag">VAP Out</span>
+            <span class="tag">Alpha Pack</span>
           </div>
           <div class="card-arrow">→</div>
         </div>
@@ -747,6 +768,7 @@
             <button class="effect-btn" onclick="applyEffect('scaleDown')">Scale Down</button>
             <button class="effect-btn" onclick="applyEffect('slideLeft')">Slide Left</button>
             <button class="effect-btn" onclick="applyEffect('slideRight')">Slide Right</button>
+            <button class="effect-btn" onclick="resetAnimations()">Clear Effects</button>
           </div>
 
           <h3>Settings</h3>
@@ -775,7 +797,7 @@
             <button class="ctrl-btn" onclick="editorPause()" id="btn-pause">⏸ Pause</button>
             <button class="ctrl-btn" onclick="editorReset()">⟲ Reset</button>
           </div>
-          <div class="timeline-bar" id="timeline-bar">
+          <div class="timeline-bar" id="timeline-bar" onclick="editorScrub(event)">
             <div class="timeline-track">
               <div class="timeline-cursor" id="timeline-cursor"></div>
             </div>
@@ -845,69 +867,69 @@
       <div class="page-header">
         <div class="header-actions">
           <button class="back-btn" onclick="navigateTo('home')">← Back</button>
-          <button class="new-file-btn" id="svga-edit-reset-btn" onclick="studioResetEdit()" style="display:none;">Clear All</button>
+          <button class="new-file-btn" id="svga-edit-reset-btn" onclick="studioResetEdit()">Clear All</button>
         </div>
         <h2 class="page-title">SVGA <span class="gradient-text">Editing</span></h2>
-        <p class="page-desc">Upload multiple SVGA — stack layers on top of each other — export a new composed SVGA</p>
+        <p class="page-desc">Upload images or SVGA on the right, drag them onto the large preview, arrange up to 8 pieces, then export one composed SVGA</p>
       </div>
       <div class="converter-layout studio-layout">
-        <div class="upload-zone" id="svga-edit-upload-zone" ondragover="handleDragOver(event)"
-          ondragleave="handleDragLeave(event)" ondrop="studioHandleDrop(event, 'svga-edit')">
-          <div class="upload-content">
-            <div class="upload-icon">
-              <svg viewBox="0 0 64 64" fill="none">
-                <rect x="8" y="16" width="48" height="40" rx="8" stroke="currentColor" stroke-width="2"
-                  stroke-dasharray="4 4" />
-                <path d="M32 28V48" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                <path d="M24 36L32 28L40 36" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                  stroke-linejoin="round" />
-              </svg>
-            </div>
-            <p class="upload-text">Drag &amp; drop <strong>one or more .svga</strong> files</p>
-            <p class="upload-hint">Bottom layer first · top layer last · multi-select OK</p>
-            <input type="file" accept=".svga" multiple class="file-input" id="svga-edit-file-input"
-              onchange="studioHandleFileSelect(event, 'svga-edit')">
-          </div>
-        </div>
-
-        <div id="svga-edit-workspace" class="svga-edit-workspace" style="display:none;">
+        <div id="svga-edit-workspace" class="svga-edit-workspace">
           <div class="svga-edit-preview-col">
-            <div id="svga-edit-player" class="svga-edit-stage"></div>
+            <div class="svga-inspector-main-head">Large Preview</div>
+            <div id="svga-edit-player" class="svga-edit-stage"
+              ondragover="studioEditCanvasDragOver(event)"
+              ondragleave="studioEditCanvasDragLeave(event)"
+              ondrop="studioEditCanvasDrop(event)">
+              <div class="svga-edit-stage-hint" id="svga-edit-stage-hint">Drag images or SVGA here to build a layout (max 8)</div>
+            </div>
             <div class="svga-edit-filebar">
-              <span id="svga-edit-file-name">Composition</span>
-              <span id="svga-edit-file-size"></span>
+              <span id="svga-edit-file-name">Empty canvas</span>
+              <span id="svga-edit-file-size">0 / 8 on preview</span>
             </div>
             <div class="svga-edit-playback">
               <button type="button" class="studio-chip-btn" onclick="studioEditPlayPause()">Play / Pause</button>
               <button type="button" class="studio-chip-btn" onclick="studioEditRestart()">Restart</button>
-              <button type="button" class="studio-chip-btn" onclick="document.getElementById('svga-edit-add-input').click()">+ Add SVGA</button>
-              <input type="file" accept=".svga" multiple id="svga-edit-add-input" style="display:none"
-                onchange="studioEditAddFiles(event)">
             </div>
           </div>
 
           <div class="svga-edit-side">
+            <div class="svga-edit-images" id="svga-edit-images-panel">
+              <div class="svga-edit-images-head">
+                <h3 class="svga-edit-panel-title">Image Upload (<span id="svga-edit-image-count">0</span>)</h3>
+              </div>
+              <p class="svga-edit-hint">SVGA plays in the tile. Image shows as a still. Drag a tile onto Large Preview.</p>
+              <div class="svga-edit-lib-actions">
+                <button type="button" class="studio-chip-btn" onclick="document.getElementById('svga-edit-file-input').click()">+ Upload image / SVGA</button>
+                <input type="file" accept=".svga,.png,.jpg,.jpeg,.webp,.gif,image/*" multiple
+                  id="svga-edit-file-input" style="display:none"
+                  onchange="studioHandleFileSelect(event, 'svga-edit')">
+              </div>
+              <div id="svga-edit-image-list" class="svga-asset-grid"
+                ondragover="handleDragOver(event)"
+                ondragleave="handleDragLeave(event)"
+                ondrop="studioHandleDrop(event, 'svga-edit')"></div>
+            </div>
+
             <div class="svga-edit-detail">
               <h3 class="svga-edit-panel-title">Detail</h3>
               <dl class="svga-edit-meta">
                 <div><dt>Size</dt><dd id="svga-edit-meta-size">—</dd></div>
-                <div><dt>Frame Count</dt><dd id="svga-edit-meta-frames">—</dd></div>
+                <div><dt>Frame</dt><dd id="svga-edit-meta-frames">—</dd></div>
                 <div><dt>FPS</dt><dd id="svga-edit-meta-fps">—</dd></div>
                 <div><dt>Duration</dt><dd id="svga-edit-meta-duration">—</dd></div>
-                <div><dt>Layers</dt><dd id="svga-edit-meta-version">—</dd></div>
+                <div><dt>On preview</dt><dd id="svga-edit-meta-version">0 / 8</dd></div>
               </dl>
             </div>
 
             <div class="svga-edit-layers">
               <div class="svga-edit-images-head">
-                <h3 class="svga-edit-panel-title">SVGA Layers(<span id="svga-edit-layer-count">0</span>)</h3>
+                <h3 class="svga-edit-panel-title">On Preview (<span id="svga-edit-layer-count">0</span>)</h3>
               </div>
-              <p class="svga-edit-hint">Bottom → Top. Stack to compose a new SVGA.</p>
               <div id="svga-edit-layer-list" class="svga-edit-layer-list"></div>
             </div>
 
             <div class="svga-edit-options" id="svga-edit-options-panel">
-              <h3 class="svga-edit-panel-title">Edit Options <span class="svga-edit-opt-hint">(active layer)</span></h3>
+              <h3 class="svga-edit-panel-title">Edit Options <span class="svga-edit-opt-hint">(selected item)</span></h3>
               <div class="svga-edit-options-body">
                 <div class="settings-group">
                   <label class="setting-label">Animation Speed</label>
@@ -955,26 +977,47 @@
                   </div>
                 </div>
                 <button type="button" class="studio-chip-btn" onclick="studioEditResetOptions()">Reset Options</button>
+                <div class="settings-group" style="margin-top:14px;">
+                  <label class="setting-label">Frame trim</label>
+                  <div class="settings-row">
+                    <div class="settings-group">
+                      <label class="setting-label">Start</label>
+                      <input type="number" id="svga-edit-frame-start" class="setting-input" value="0" min="0"
+                        oninput="studioEditOnOptionChange()">
+                    </div>
+                    <div class="settings-group">
+                      <label class="setting-label">End</label>
+                      <input type="number" id="svga-edit-frame-end" class="setting-input" value="0" min="0"
+                        oninput="studioEditOnOptionChange()">
+                    </div>
+                  </div>
+                </div>
+                <div class="settings-group">
+                  <label class="setting-label">Image replace</label>
+                  <div id="svga-edit-replace-grid" class="svga-replace-grid"></div>
+                  <input type="file" accept="image/*" id="svga-edit-replace-input" style="display:none"
+                    onchange="studioEditReplaceSelected(event)">
+                  <button type="button" class="studio-chip-btn" onclick="studioEditInspectActive()">Load sprites</button>
+                </div>
+                <div class="settings-group">
+                  <label class="setting-label">Text edit (bakes onto selected sprite)</label>
+                  <input type="text" id="svga-edit-text" class="setting-input" placeholder="Replacement text">
+                  <div class="settings-row">
+                    <input type="color" id="svga-edit-text-color" value="#ffffff">
+                    <input type="number" id="svga-edit-text-size" class="setting-input" value="32" min="8" max="200">
+                  </div>
+                  <button type="button" class="studio-chip-btn" onclick="studioEditApplyText()">Apply text</button>
+                </div>
               </div>
-            </div>
-
-            <div class="svga-edit-images" id="svga-edit-images-panel">
-              <div class="svga-edit-images-head">
-                <h3 class="svga-edit-panel-title">Image(<span id="svga-edit-image-count">0</span>)</h3>
-              </div>
-              <div id="svga-edit-image-list" class="svga-edit-image-list"></div>
             </div>
 
             <div class="svga-edit-actions">
-              <input type="file" accept="image/png,image/webp,image/jpeg,.png,.webp,.jpg" id="svga-edit-replace-input"
-                style="display:none" onchange="studioEditReplaceSelected(event)">
-              <button type="button" class="studio-chip-btn" id="svga-edit-replace-btn" onclick="studioEditPickReplace()" disabled>
-                Replace Selected Image
-              </button>
               <button type="button" class="convert-btn" id="svga-edit-export-btn" onclick="studioEditExportCompose()">
                 <span class="btn-text">Export Composed SVGA</span>
                 <span class="btn-loader"></span>
               </button>
+              <button type="button" class="secondary-btn" id="svga-edit-patch-btn" onclick="studioEditExportPatch()"
+                style="width:100%;margin-top:8px;">Export Edited SVGA (replace / text / trim)</button>
             </div>
           </div>
         </div>
@@ -1013,16 +1056,28 @@
           <div class="studio-preview-panel">
             <h3 class="section-title">Alpha Preview</h3>
             <div class="vap-preview-stage" id="vap-mp4-stage">
-              <video id="vap-mp4-video" playsinline loop muted></video>
+              <video id="vap-mp4-video" class="vap-hidden-source" playsinline loop muted></video>
+              <canvas id="vap-mp4-canvas" class="vap-alpha-canvas"></canvas>
             </div>
             <div class="file-details">
               <span id="vap-mp4-file-name"></span>
               <span id="vap-mp4-file-size"></span>
             </div>
+            <dl class="svga-edit-meta">
+              <div><dt>Resolution</dt><dd id="vap-mp4-meta-res">—</dd></div>
+              <div><dt>FPS</dt><dd id="vap-mp4-meta-fps">—</dd></div>
+              <div><dt>Duration</dt><dd id="vap-mp4-meta-dur">—</dd></div>
+              <div><dt>Alpha</dt><dd id="vap-mp4-meta-alpha">—</dd></div>
+            </dl>
             <div class="studio-playback-bar">
               <button type="button" class="studio-chip-btn" onclick="studioVapPlayPause()">Play / Pause</button>
               <label class="studio-tool"><input type="checkbox" id="vap-mp4-checker" checked onchange="studioVapToggleBg()"> Checkerboard BG</label>
             </div>
+            <div id="vap-mp4-progress" class="studio-progress" style="display:none;">
+              <div class="studio-progress-track"><div class="studio-progress-bar"></div></div>
+              <div class="studio-progress-label">Working…</div>
+            </div>
+            <div id="vap-mp4-result" class="studio-result-preview" style="display:none;"></div>
           </div>
           <div class="studio-tools-panel">
             <h3 class="section-title">VAP Options</h3>
@@ -1033,8 +1088,122 @@
               <li>Animation Play / Pause</li>
               <li>Export ready for AlphaPlayer</li>
             </ul>
-            <button class="convert-btn" onclick="studioAction('vap-mp4')">
+            <button class="convert-btn" id="vap-mp4-export-btn" onclick="studioConvertVapMp4()">
               <span class="btn-text">Export VAP MP4</span>
+              <span class="btn-loader"></span>
+            </button>
+            <div id="studio-download-list" class="studio-dl-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== MP4 → VAP MP4 ===== -->
+    <section id="page-mp4-vap" class="page">
+      <div class="page-header">
+        <div class="header-actions">
+          <button class="back-btn" onclick="navigateTo('home')">← Back</button>
+        </div>
+        <h2 class="page-title">MP4 → <span class="gradient-text">VAP MP4</span></h2>
+        <p class="page-desc">Normal MP4 → optional background remove → pack left-alpha + right-RGB VAP for AlphaPlayer</p>
+      </div>
+      <div class="converter-layout studio-layout">
+        <div class="upload-zone" id="mp4-vap-upload-zone" ondragover="handleDragOver(event)"
+          ondragleave="handleDragLeave(event)" ondrop="studioHandleDrop(event, 'mp4-vap')">
+          <div class="upload-content">
+            <div class="upload-icon">
+              <svg viewBox="0 0 64 64" fill="none">
+                <rect x="8" y="16" width="48" height="40" rx="8" stroke="currentColor" stroke-width="2"
+                  stroke-dasharray="4 4" />
+                <path d="M32 28V48" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                <path d="M24 36L32 28L40 36" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </div>
+            <p class="upload-text">Drag &amp; drop <strong>MP4 / MOV</strong></p>
+            <p class="upload-hint">Regular video — converts to VAP alpha MP4</p>
+            <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov" class="file-input" id="mp4-vap-file-input"
+              onchange="studioHandleFileSelect(event, 'mp4-vap')">
+          </div>
+        </div>
+        <div id="mp4-vap-workspace" class="studio-workspace" style="display:none;">
+          <div class="studio-preview-panel">
+            <h3 class="section-title">Source MP4</h3>
+            <div class="vap-preview-stage" id="mp4-vap-stage">
+              <video id="mp4-vap-video" class="studio-source-video" controls playsinline muted></video>
+            </div>
+            <div class="file-details">
+              <span id="mp4-vap-file-name"></span>
+              <span id="mp4-vap-file-size"></span>
+            </div>
+            <dl class="svga-edit-meta">
+              <div><dt>Resolution</dt><dd id="mp4-vap-meta-res">—</dd></div>
+              <div><dt>FPS</dt><dd id="mp4-vap-meta-fps">—</dd></div>
+              <div><dt>Duration</dt><dd id="mp4-vap-meta-dur">—</dd></div>
+              <div><dt>Alpha</dt><dd id="mp4-vap-meta-alpha">—</dd></div>
+            </dl>
+            <div class="studio-flow">
+              <span>MP4</span><span>→</span><span>Frames</span><span>→</span><span>Alpha Pack</span><span>→</span><span>VAP MP4</span>
+            </div>
+            <div id="mp4-vap-progress" class="studio-progress" style="display:none;">
+              <div class="studio-progress-track"><div class="studio-progress-bar"></div></div>
+              <div class="studio-progress-label">Working…</div>
+            </div>
+            <div id="mp4-vap-result" class="studio-result-preview" style="display:none;"></div>
+          </div>
+          <div class="studio-tools-panel">
+            <h3 class="section-title">Convert Settings</h3>
+            <label class="studio-tool">
+              <input type="checkbox" id="mp4-vap-remove-bg" checked onchange="studioMp4VapToggleBg()">
+              Remove background
+            </label>
+            <div id="mp4-vap-bg-colors" class="settings-group">
+              <label class="setting-label">Key / fill color</label>
+              <select id="mp4-vap-bg-color" class="setting-select">
+                <option value="transparent" selected>Transparent</option>
+                <option value="green">Green</option>
+                <option value="black">Black</option>
+                <option value="white">White</option>
+              </select>
+            </div>
+            <div class="settings-group">
+              <label class="setting-label">Quality</label>
+              <select id="mp4-vap-quality" class="setting-select">
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+            <div class="settings-group">
+              <label class="setting-label">FPS</label>
+              <select id="mp4-vap-fps" class="setting-select">
+                <option value="15">15 FPS</option>
+                <option value="24">24 FPS</option>
+                <option value="30" selected>30 FPS</option>
+                <option value="60">60 FPS</option>
+              </select>
+            </div>
+            <div class="settings-group">
+              <label class="setting-label">Bitrate</label>
+              <select id="mp4-vap-bitrate" class="setting-select">
+                <option value="2">2 Mbps</option>
+                <option value="4" selected>4 Mbps</option>
+                <option value="8">8 Mbps</option>
+                <option value="12">12 Mbps</option>
+              </select>
+            </div>
+            <div class="settings-group">
+              <label class="setting-label">Resolution</label>
+              <select id="mp4-vap-res" class="setting-select">
+                <option value="original" selected>Original</option>
+                <option value="720">720p</option>
+                <option value="540">540p</option>
+                <option value="360">360p</option>
+              </select>
+            </div>
+            <button class="convert-btn" id="mp4-vap-btn" onclick="studioConvertMp4Vap()">
+              <span class="btn-text">Convert to VAP MP4</span>
+              <span class="btn-loader"></span>
             </button>
           </div>
         </div>
@@ -1072,6 +1241,11 @@
         </div>
         <div id="multi-svga-toolbar" class="studio-toolbar" style="display:none;">
           <button type="button" class="studio-chip-btn" onclick="document.getElementById('multi-svga-file-input').click()">+ Add more</button>
+          <button type="button" class="studio-chip-btn" onclick="studioMultiSetView('grid')">Grid</button>
+          <button type="button" class="studio-chip-btn" onclick="studioMultiSetView('list')">List</button>
+          <button type="button" class="studio-chip-btn" onclick="studioMultiAll('play')">Play all</button>
+          <button type="button" class="studio-chip-btn" onclick="studioMultiAll('pause')">Pause</button>
+          <button type="button" class="studio-chip-btn" onclick="studioMultiAll('stop')">Stop</button>
           <label class="studio-tool"><input type="checkbox" id="multi-svga-loop" checked onchange="studioMultiSetLoop()"> Loop Play</label>
           <div class="studio-zoom">
             <button type="button" class="studio-chip-btn" onclick="studioMultiZoom(-1)">Zoom −</button>
@@ -1108,18 +1282,27 @@
             </div>
             <p class="upload-text">Drag &amp; drop <strong>VAP MP4</strong> to convert</p>
             <p class="upload-hint">MP4 / MOV alpha video</p>
-            <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.vap" class="file-input"
+            <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.vap" class="file-input" multiple
               id="vap-convert-file-input" onchange="studioHandleFileSelect(event, 'vap-convert')">
           </div>
         </div>
         <div id="vap-convert-workspace" class="studio-workspace" style="display:none;">
           <div class="studio-preview-panel">
             <h3 class="section-title">Source</h3>
-            <video id="vap-convert-video" class="studio-source-video" controls playsinline muted></video>
+            <div class="vap-preview-stage" id="vap-convert-stage">
+              <video id="vap-convert-video" class="vap-hidden-source" playsinline loop muted></video>
+              <canvas id="vap-convert-canvas" class="vap-alpha-canvas"></canvas>
+            </div>
             <div class="file-details">
               <span id="vap-convert-file-name"></span>
               <span id="vap-convert-file-size"></span>
             </div>
+            <dl class="svga-edit-meta">
+              <div><dt>Resolution</dt><dd id="vap-convert-meta-res">—</dd></div>
+              <div><dt>FPS</dt><dd id="vap-convert-meta-fps">—</dd></div>
+              <div><dt>Duration</dt><dd id="vap-convert-meta-dur">—</dd></div>
+              <div><dt>Alpha</dt><dd id="vap-convert-meta-alpha">—</dd></div>
+            </dl>
             <div class="studio-flow">
               <span>VAP MP4</span><span>→</span><span>Frames</span><span>→</span><span>SVGA / WebP</span>
             </div>
@@ -1163,9 +1346,15 @@
               </select>
             </div>
             <label class="studio-tool"><input type="checkbox" id="vap-convert-alpha" checked> Keep transparent background</label>
-            <button class="convert-btn" onclick="studioAction('vap-convert')">
+            <div id="vap-convert-progress" class="studio-progress" style="display:none;">
+              <div class="studio-progress-track"><div class="studio-progress-bar"></div></div>
+              <div class="studio-progress-label">Working…</div>
+            </div>
+            <button class="convert-btn" id="vap-convert-btn" onclick="studioConvertVapFormat()">
               <span class="btn-text">Convert</span>
+              <span class="btn-loader"></span>
             </button>
+            <div id="vap-convert-result" class="studio-result-preview" style="display:none;"></div>
           </div>
         </div>
       </div>
@@ -1241,9 +1430,20 @@
               </select>
             </div>
             <label class="studio-tool"><input type="checkbox" id="svga-vap-alpha" checked> Export with alpha channel</label>
-            <button class="convert-btn" onclick="studioAction('svga-vap')">
+            <div id="svga-vap-progress" class="studio-progress" style="display:none;">
+              <div class="studio-progress-track"><div class="studio-progress-bar"></div></div>
+              <div class="studio-progress-label">Working…</div>
+            </div>
+            <button class="convert-btn" id="svga-vap-btn" onclick="studioConvertSvgaVap()">
               <span class="btn-text">Encode VAP MP4</span>
+              <span class="btn-loader"></span>
             </button>
+            <div id="svga-vap-result" class="studio-result-preview" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- TANVIR SVGA PROJECT PAGE -->
     <section id="page-tanvir-svga" class="page">
       <div class="page-header">
@@ -1278,9 +1478,9 @@
   <script src="/js/config.js?v=1.0"></script>
   <script src="/js/token.js?v=1.4"></script>
   <script src="/js/svga-preview.js?v=1.5"></script>
-  <script src="/js/app.js?v=2.7"></script>
-  <script src="/js/editor.js?v=1.4"></script>
-  <script src="/js/studio.js?v=2.1"></script>
+  <script src="/js/app.js?v=2.9"></script>
+  <script src="/js/editor.js?v=1.5"></script>
+  <script src="/js/studio.js?v=2.7"></script>
 </body>
 
 </html>

@@ -362,13 +362,40 @@ async function composeStackedLayers(layers, options = {}) {
   for (let i = 0; i < layers.length; i++) {
     const layer = layers[i];
     const t = transforms[i] || {};
+    const speed = t.speed != null ? t.speed : 1;
+    const scale = t.scale != null ? t.scale : 1;
+    if (layer.staticPng) {
+      const w = layer.width || 300;
+      const h = layer.height || 300;
+      outW = Math.max(outW, Math.ceil(w * scale + Math.abs(t.x || 0) * 2));
+      outH = Math.max(outH, Math.ceil(h * scale + Math.abs(t.y || 0) * 2));
+      outFps = Math.max(outFps, 20);
+      outFrames = Math.max(outFrames, 1);
+      prepared.push({
+        name: layer.name || 'image',
+        width: w,
+        height: h,
+        frameCount: 1,
+        rendered: [{ buffer: layer.staticPng }],
+        transform: {
+          scale,
+          x: t.x || 0,
+          y: t.y || 0,
+          rotation: t.rotation || 0,
+          opacity: t.opacity != null ? t.opacity : 1,
+          speed: 1,
+          tintOn: !!t.tintOn,
+          tint: t.tint || '#ffffff'
+        }
+      });
+      continue;
+    }
+
     const params = layer.movieData.params || {};
     const w = params.viewBoxWidth || 300;
     const h = params.viewBoxHeight || 300;
     const baseFps = params.fps || 20;
     const frames = params.frames || 1;
-    const speed = t.speed != null ? t.speed : 1;
-    const scale = t.scale != null ? t.scale : 1;
 
     outW = Math.max(outW, Math.ceil(w * scale + Math.abs(t.x || 0) * 2));
     outH = Math.max(outH, Math.ceil(h * scale + Math.abs(t.y || 0) * 2));
@@ -432,6 +459,13 @@ async function composeStackedLayers(layers, options = {}) {
       ctx.translate(cx, cy);
       ctx.rotate(rot);
       ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+      if (layer.transform.tintOn && layer.transform.tint && layer.transform.tint !== '#ffffff') {
+        ctx.globalCompositeOperation = 'source-atop';
+        ctx.globalAlpha = 0.45;
+        ctx.fillStyle = layer.transform.tint;
+        ctx.fillRect(-dw / 2, -dh / 2, dw, dh);
+        ctx.globalCompositeOperation = 'source-over';
+      }
       ctx.restore();
     }
 

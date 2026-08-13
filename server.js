@@ -77,7 +77,11 @@ const tokenManager = require('./services/tokenManager');
 // Admin Auth Middleware
 const adminAuthMiddleware = (req, res, next) => {
   const adminSecret = req.headers['x-admin-secret'];
-  if (adminSecret !== (process.env.ADMIN_SECRET || 'super-secure-admin-key-123')) {
+  const adminConfigured = process.env.ADMIN_SECRET;
+  if (!adminConfigured && (process.env.NODE_ENV || '').toLowerCase() === 'production') {
+    return res.status(401).json({ error: 'Unauthorized Admin Access' });
+  }
+  if (adminSecret !== (adminConfigured || 'super-secure-admin-key-123')) {
     return res.status(401).json({ error: 'Unauthorized Admin Access' });
   }
   next();

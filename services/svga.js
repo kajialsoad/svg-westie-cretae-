@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const pako = require('pako');
 const protobuf = require('protobufjs');
 const sharp = require('sharp');
+const { createCanvas } = require('canvas');
 
 let MovieEntity = null;
 const _bufStride = 8488702330;
@@ -989,6 +990,129 @@ async function optimizeSVGADirect(svgaBuffer, options = {}) {
   return result;
 }
 
+function toPngBuffer(raw) {
+  if (!raw) return null;
+  if (Buffer.isBuffer(raw)) return raw;
+  if (raw.type === 'Buffer' && Array.isArray(raw.data)) return Buffer.from(raw.data);
+  if (raw instanceof Uint8Array) return Buffer.from(raw);
+  return null;
+}
+
+async function inspectSVGA(svgaBuffer) {
+  const movieData = await parseSVGA(svgaBuffer);
+  const params = movieData.params || {};
+  const images = [];
+  for (const [key, raw] of Object.entries(movieData.images || {})) {
+    const buf = toPngBuffer(raw);
+    if (!buf || buf.length < 24) continue;
+    try {
+      const meta = await sharp(buf).metadata();
+      const thumb = await sharp(buf)
+        .resize(72, 72, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .png()
+        .toBuffer();
+      images.push({
+        key,
+        width: meta.width || 0,
+        height: meta.height || 0,
+        bytes: buf.length,
+        preview: 'data:image/png;base64,' + thumb.toString('base64'),
+      });
+    } catch (_) {
+      // skip non-image assets (audio)
+    }
+  }
+  const sprites = (movieData.sprites || []).map((s, i) => ({
+    index: i,
+    imageKey: s.imageKey || '',
+    frames: (s.frames || []).length,
+  }));
+  return {
+    width: params.viewBoxWidth || 0,
+    height: params.viewBoxHeight || 0,
+    fps: params.fps || 20,
+    frames: params.frames || 0,
+    images,
+    sprites,
+  };
+}
+
+async function renderTextAsset(width, height, options = {}) {
+  const w = Math.max(8, Math.round(width || 200));
+  const h = Math.max(8, Math.round(height || 80));
+  const canvas = createCanvas(w, h);
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = options.color || '#ffffff';
+  ctx.font = `bold ${Math.max(10, Number(options.fontSize) || Math.round(h * 0.45))}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(options.text || ''), w / 2, h / 2, w - 8);
+  return canvas.toBuffer('image/png');
+}
+
+async function patchSVGA(svgaBuffer, options = {}) {
+  const Movie = await loadProto();
+  let decompressed;
+  try {
+    decompressed = pako.inflate(new Uint8Array(svgaBuffer));
+  } catch (e) {
+    decompressed = new Uint8Array(svgaBuffer);
+  }
+  const message = Movie.decode(decompressed);
+  if (!message.images) message.images = {};
+
+  const replacements = options.replacements || {};
+  for (const [key, raw] of Object.entries(replacements)) {
+    if (!raw) continue;
+    const png = await sharp(raw).ensureAlpha().png().toBuffer();
+    message.images[key] = png;
+  }
+
+  const textOverlays = options.textOverlays || [];
+  for (const overlay of textOverlays) {
+    if (!overlay || !overlay.imageKey || !overlay.text) continue;
+    const current = message.images[overlay.imageKey];
+    let w = overlay.width || 200;
+    let h = overlay.height || 80;
+    if (current) {
+      try {
+        const meta = await sharp(Buffer.from(current)).metadata();
+        w = meta.width || w;
+        h = meta.height || h;
+      } catch (_) {}
+    }
+    message.images[overlay.imageKey] = await renderTextAsset(w, h, overlay);
+  }
+
+  const hideKeys = new Set(options.hideKeys || []);
+  if (hideKeys.size && Array.isArray(message.sprites)) {
+    message.sprites = message.sprites.filter((s) => s && !hideKeys.has(s.imageKey));
+  }
+
+  if (message.params) {
+    if (options.fps) {
+      message.params.fps = Math.max(1, Math.round(Number(options.fps)));
+    }
+    const total = message.params.frames || 0;
+    const start = Math.max(0, parseInt(options.startFrame, 10) || 0);
+    const endRaw = parseInt(options.endFrame, 10);
+    const end = Number.isFinite(endRaw) ? Math.min(total - 1, endRaw) : total - 1;
+    if (total > 0 && (start > 0 || end < total - 1) && end >= start) {
+      const nextCount = end - start + 1;
+      for (const sprite of (message.sprites || [])) {
+        if (sprite && Array.isArray(sprite.frames)) {
+          sprite.frames = sprite.frames.slice(start, end + 1);
+        }
+      }
+      message.params.frames = nextCount;
+    }
+  }
+
+  const buffer = Movie.encode(message).finish();
+  return Buffer.from(pako.deflate(buffer, { level: 9 }));
+}
+
 module.exports = {
   parseSVGA,
   extractImages,
@@ -1001,5 +1125,7 @@ module.exports = {
   optimizeAndEncodeMovieData,
   optimizeMovieDataForOneMb,
   optimizeSVGADirect,
+  inspectSVGA,
+  patchSVGA,
   loadProto,
 };

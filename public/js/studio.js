@@ -1,12 +1,13 @@
 /**
  * AnimSuite Pro — Studio modules (SVGA Edit, VAP, Multi Preview, converters)
- * UI + client preview wired; conversion backends land in a later phase.
+ * UI + conversion backends for SVGA Edit, VAP, Multi Preview.
  */
 
 const studioState = {
   files: {
     'svga-edit': null,
     'vap-mp4': null,
+    'mp4-vap': null,
     'vap-convert': null,
     'svga-vap': null
   },
@@ -16,18 +17,27 @@ const studioState = {
   multiLoop: true,
   vapObjectUrl: null,
   convertObjectUrl: null,
+  mp4VapObjectUrl: null,
+  vapRaf: 0,
+  vapMeta: null,
+  downloads: [],
+  multiView: 'grid',
   edit: {
-    layers: [], // { id, file, name, size, url, videoItem, player, shell, visible }
+    library: [],
+    layers: [],
     activeLayerId: null,
-    selectedKey: null,
     paused: false,
-    composing: false
+    composing: false,
+    canvasMax: 8,
+    inspect: null,
+    replaceKey: null
   }
 };
 
 const STUDIO_ACCEPT = {
-  'svga-edit': ['.svga'],
+  'svga-edit': ['.svga', '.png', '.jpg', '.jpeg', '.webp', '.gif', 'image/png', 'image/jpeg', 'image/webp', 'image/gif'],
   'vap-mp4': ['.mp4', '.vap', 'video/mp4'],
+  'mp4-vap': ['.mp4', '.mov', 'video/mp4', 'video/quicktime'],
   'multi-svga': ['.svga'],
   'vap-convert': ['.mp4', '.mov', '.vap', 'video/mp4', 'video/quicktime'],
   'svga-vap': ['.svga']
@@ -70,6 +80,10 @@ function studioHandleDrop(e, module) {
     studioEditLoadFiles(files);
     return;
   }
+  if (module === 'vap-convert' && files.length > 1) {
+    studioBatchVapConvert(files);
+    return;
+  }
   const file = files[0];
   if (!studioFileOk(file, module)) {
     studioNotify('Unsupported file for this module', 'error');
@@ -88,6 +102,11 @@ function studioHandleFileSelect(e, module) {
   }
   if (module === 'svga-edit') {
     studioEditLoadFiles(files);
+    e.target.value = '';
+    return;
+  }
+  if (module === 'vap-convert' && files.length > 1) {
+    studioBatchVapConvert(files);
     e.target.value = '';
     return;
   }
@@ -112,7 +131,21 @@ async function studioLoadFile(module, file) {
     if (studioState.vapObjectUrl) URL.revokeObjectURL(studioState.vapObjectUrl);
     studioState.vapObjectUrl = URL.createObjectURL(file);
     video.src = studioState.vapObjectUrl;
-    video.play().catch(() => {});
+    studioBindVapPreview(video, 'vap-mp4-canvas', 'vap-mp4');
+    studioProbeVap(file, 'vap-mp4');
+    return;
+  }
+
+  if (module === 'mp4-vap') {
+    document.getElementById('mp4-vap-upload-zone').style.display = 'none';
+    document.getElementById('mp4-vap-workspace').style.display = 'grid';
+    document.getElementById('mp4-vap-file-name').textContent = file.name;
+    document.getElementById('mp4-vap-file-size').textContent = studioFormatSize(file.size);
+    const video = document.getElementById('mp4-vap-video');
+    if (studioState.mp4VapObjectUrl) URL.revokeObjectURL(studioState.mp4VapObjectUrl);
+    studioState.mp4VapObjectUrl = URL.createObjectURL(file);
+    video.src = studioState.mp4VapObjectUrl;
+    studioProbeVap(file, 'mp4-vap');
     return;
   }
 
@@ -125,6 +158,8 @@ async function studioLoadFile(module, file) {
     if (studioState.convertObjectUrl) URL.revokeObjectURL(studioState.convertObjectUrl);
     studioState.convertObjectUrl = URL.createObjectURL(file);
     video.src = studioState.convertObjectUrl;
+    studioBindVapPreview(video, 'vap-convert-canvas', 'vap-convert');
+    studioProbeVap(file, 'vap-convert');
     return;
   }
 
@@ -163,6 +198,16 @@ function studioFormatKb(bytes) {
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
 }
 
+function studioEditIsSvga(file) {
+  return (file.name || '').toLowerCase().endsWith('.svga');
+}
+
+function studioEditIsImage(file) {
+  const name = (file.name || '').toLowerCase();
+  if (/\.(png|jpe?g|webp|gif)$/.test(name)) return true;
+  return (file.type || '').startsWith('image/');
+}
+
 function studioEditAddFiles(e) {
   const files = Array.from(e.target.files || []);
   e.target.value = '';
@@ -170,66 +215,101 @@ function studioEditAddFiles(e) {
 }
 
 async function studioEditLoadFiles(files) {
-  const svgas = files.filter((f) => studioFileOk(f, 'svga-edit'));
-  if (!svgas.length) {
-    studioNotify('Please select .svga files', 'error');
+  const accepted = files.filter((f) => studioEditIsSvga(f) || studioEditIsImage(f));
+  if (!accepted.length) {
+    studioNotify('Upload .svga or image files (png, jpg, webp, gif)', 'error');
     return;
   }
 
-  const ok = await studioEnsureSvgaLib();
-  if (!ok) {
-    studioNotify('SVGA library not loaded', 'error');
-    return;
+  if (accepted.some((f) => studioEditIsSvga(f))) {
+    const ok = await studioEnsureSvgaLib();
+    if (!ok) {
+      studioNotify('SVGA library not loaded', 'error');
+      return;
+    }
   }
 
-  document.getElementById('svga-edit-upload-zone').style.display = 'none';
-  document.getElementById('svga-edit-workspace').style.display = 'grid';
-  document.getElementById('svga-edit-reset-btn').style.display = 'inline-flex';
-
-  for (const file of svgas) {
-    await studioEditAddLayer(file);
+  for (const file of accepted) {
+    await studioEditAddToLibrary(file);
   }
 
-  studioEditRebuildPreview();
-  studioEditRenderLayerList();
+  studioEditRenderLibrary();
   studioEditUpdateMeta();
 }
 
-function studioEditAddLayer(file) {
+function studioEditNewId(prefix) {
+  return prefix + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+}
+
+function studioEditDefaultOptions() {
+  return {
+    speed: 100,
+    scale: 100,
+    x: 0,
+    y: 0,
+    rotation: 0,
+    opacity: 100,
+    tint: '#ffffff',
+    tintOn: false,
+    startFrame: 0,
+    endFrame: 0
+  };
+}
+
+function studioEditAddToLibrary(file) {
+  if (studioEditIsImage(file) && !studioEditIsSvga(file)) {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        studioState.edit.library.push({
+          id: studioEditNewId('A'),
+          kind: 'image',
+          file,
+          name: file.name,
+          size: file.size,
+          url,
+          w: img.naturalWidth || 300,
+          h: img.naturalHeight || 300,
+          fps: 20,
+          frames: 1,
+          version: 'image',
+          videoItem: null,
+          thumbPlayer: null
+        });
+        resolve(true);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        studioNotify('Failed image: ' + file.name, 'error');
+        resolve(null);
+      };
+      img.src = url;
+    });
+  }
+
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const parser = new SVGA.Parser();
     parser.load(url, (videoItem) => {
-      const id = 'L' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-      const layer = {
-        id,
+      studioState.edit.library.push({
+        id: studioEditNewId('A'),
+        kind: 'svga',
         file,
         name: file.name,
         size: file.size,
         url,
         videoItem,
-        player: null,
-        wrapEl: null,
-        visible: true,
         w: videoItem.videoSize.width || 300,
         h: videoItem.videoSize.height || 300,
         fps: videoItem.FPS || 20,
-        baseFps: videoItem.FPS || 20,
-        frames: videoItem.frames || 0,
-        options: {
-          speed: 100,
-          scale: 100,
-          x: 0,
-          y: 0,
-          rotation: 0,
-          opacity: 100,
-          tint: '#ffffff',
-          tintOn: false
-        }
-      };
-      studioState.edit.layers.push(layer);
-      if (!studioState.edit.activeLayerId) studioState.edit.activeLayerId = id;
-      resolve(layer);
+        frames: Array.isArray(videoItem.frames)
+          ? videoItem.frames.length
+          : (Number(videoItem.frames) || 0),
+        version: videoItem.version || '2.0.0',
+        thumbPlayer: null
+      });
+      resolve(true);
     }, (err) => {
       console.error(err);
       URL.revokeObjectURL(url);
@@ -239,15 +319,183 @@ function studioEditAddLayer(file) {
   });
 }
 
+function studioEditStopLibraryPlayers() {
+  studioState.edit.library.forEach((asset) => {
+    if (!asset.thumbPlayer) return;
+    try {
+      asset.thumbPlayer.stopAnimation();
+      asset.thumbPlayer.clear();
+    } catch (_) {}
+    asset.thumbPlayer = null;
+  });
+}
+
+function studioEditRenderLibrary() {
+  const list = document.getElementById('svga-edit-image-list');
+  if (!list) return;
+  studioEditStopLibraryPlayers();
+  const assets = studioState.edit.library;
+  document.getElementById('svga-edit-image-count').textContent = String(assets.length);
+  list.innerHTML = '';
+
+  if (!assets.length) {
+    list.innerHTML = '<div class="svga-edit-empty">Upload images or SVGA, then drag onto Large Preview</div>';
+    return;
+  }
+
+  assets.forEach((asset) => {
+    const card = document.createElement('div');
+    card.className = 'svga-asset-card selectable';
+    card.draggable = true;
+    card.dataset.assetId = asset.id;
+
+    const thumb = document.createElement('div');
+    thumb.className = 'svga-asset-thumb';
+    thumb.dataset.assetId = asset.id;
+
+    const name = document.createElement('div');
+    name.className = 'svga-asset-name';
+    name.textContent = asset.name;
+
+    const meta = document.createElement('div');
+    meta.className = 'svga-asset-meta';
+    meta.textContent = asset.kind === 'svga'
+      ? asset.w + ' × ' + asset.h + '  SVGA'
+      : asset.w + ' × ' + asset.h + '  image';
+
+    card.appendChild(thumb);
+    card.appendChild(name);
+    card.appendChild(meta);
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'studio-chip-btn svga-asset-add';
+    addBtn.textContent = 'Add to preview';
+    addBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      studioEditPlaceOnCanvas(asset.id, 0, 0);
+    });
+    card.appendChild(addBtn);
+    card.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', asset.id);
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+    card.addEventListener('dblclick', () => studioEditPlaceOnCanvas(asset.id, 0, 0));
+    list.appendChild(card);
+
+    if (asset.kind === 'image') {
+      const img = document.createElement('img');
+      img.alt = asset.name;
+      img.src = asset.url;
+      img.draggable = false;
+      thumb.appendChild(img);
+    } else {
+      const canvas = document.createElement('canvas');
+      canvas.width = asset.w;
+      canvas.height = asset.h;
+      canvas.draggable = false;
+      thumb.appendChild(canvas);
+      try {
+        const player = new SVGA.Player(canvas);
+        player.loops = 0;
+        player.clearsAfterStop = false;
+        player.setVideoItem(asset.videoItem);
+        player.startAnimation();
+        asset.thumbPlayer = player;
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  });
+}
+
+function studioEditCanvasDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+  e.currentTarget.classList.add('is-drop-target');
+}
+
+function studioEditCanvasDragLeave(e) {
+  e.currentTarget.classList.remove('is-drop-target');
+}
+
+function studioEditCanvasDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('is-drop-target');
+  const files = Array.from(e.dataTransfer.files || []);
+  if (files.length) {
+    const before = studioState.edit.library.length;
+    studioEditLoadFiles(files).then(() => {
+      const added = studioState.edit.library.slice(before);
+      added.forEach((asset) => studioEditPlaceOnCanvas(asset.id, e.clientX, e.clientY));
+    });
+    return;
+  }
+  const assetId = e.dataTransfer.getData('text/plain');
+  if (assetId) studioEditPlaceOnCanvas(assetId, e.clientX, e.clientY);
+}
+
+function studioEditPlaceOnCanvas(assetId, clientX, clientY) {
+  const asset = studioState.edit.library.find((a) => a.id === assetId);
+  if (!asset) return;
+  if (studioState.edit.layers.length >= studioState.edit.canvasMax) {
+    studioNotify('Large Preview holds 8 items max', 'error');
+    return;
+  }
+
+  const stage = document.getElementById('svga-edit-player');
+  const rect = stage.getBoundingClientRect();
+  let x = 0;
+  let y = 0;
+  if (clientX && clientY) {
+    x = Math.round(clientX - (rect.left + rect.width / 2));
+    y = Math.round(clientY - (rect.top + rect.height / 2));
+  } else {
+    const n = studioState.edit.layers.length;
+    x = (n % 4) * 24 - 36;
+    y = Math.floor(n / 4) * 24 - 12;
+  }
+
+  const layer = {
+    id: studioEditNewId('L'),
+    kind: asset.kind,
+    file: asset.file,
+    name: asset.name,
+    size: asset.size,
+    url: asset.url,
+    videoItem: asset.videoItem ? Object.assign({}, asset.videoItem) : null,
+    player: null,
+    wrapEl: null,
+    visible: true,
+    w: asset.w,
+    h: asset.h,
+    fps: asset.fps,
+    baseFps: asset.fps,
+    frames: asset.frames,
+    version: asset.version,
+    options: Object.assign(studioEditDefaultOptions(), { x, y })
+  };
+  studioState.edit.layers.push(layer);
+  studioState.edit.activeLayerId = layer.id;
+  studioEditRebuildPreview();
+  studioEditRenderLayerList();
+  studioEditUpdateMeta();
+}
+
 function studioEditRebuildPreview() {
   const stageEl = document.getElementById('svga-edit-player');
   const layers = studioState.edit.layers;
   stageEl.innerHTML = '';
-  stageEl.style.cssText =
-    'position:relative;display:flex;align-items:center;justify-content:center;overflow:visible;background:transparent;border:0;min-height:480px;';
+  stageEl.style.position = 'relative';
+  stageEl.style.display = 'flex';
+  stageEl.style.alignItems = 'center';
+  stageEl.style.justifyContent = 'center';
+  stageEl.style.overflow = 'hidden';
 
   if (!layers.length) {
-    stageEl.innerHTML = '<div style="color:#888;padding:2rem;">Add SVGA layers</div>';
+    stageEl.innerHTML = '<div class="svga-edit-stage-hint" id="svga-edit-stage-hint">Drag images or SVGA here to build a layout (max 8)</div>';
+    document.getElementById('svga-edit-file-name').textContent = 'Empty canvas';
+    document.getElementById('svga-edit-file-size').textContent = '0 / 8 on preview';
     return;
   }
 
@@ -258,7 +506,7 @@ function studioEditRebuildPreview() {
     outH = Math.max(outH, l.h);
   });
 
-  const maxSide = Math.min(560, Math.max(280, Math.min(window.innerWidth * 0.45, window.innerHeight * 0.65)));
+  const maxSide = Math.min(720, Math.max(320, Math.min(window.innerWidth * 0.55, window.innerHeight * 0.7)));
   const fit = Math.min(maxSide / outW, maxSide / outH);
   studioState.edit.previewFit = fit;
   studioState.edit.outW = outW;
@@ -286,45 +534,52 @@ function studioEditRebuildPreview() {
       'margin-left:' + Math.round(-layer.w / 2) + 'px;margin-top:' + Math.round(-layer.h / 2) + 'px;' +
       'transform-origin:center center;overflow:visible;border:0;pointer-events:auto;cursor:grab;';
 
-    const canvas = document.createElement('canvas');
-    canvas.width = layer.w;
-    canvas.height = layer.h;
-    canvas.style.cssText =
-      'width:' + layer.w + 'px;height:' + layer.h + 'px;display:block;border:0;outline:0;background:transparent;pointer-events:none;';
+    if (layer.kind === 'image') {
+      const img = document.createElement('img');
+      img.src = layer.url;
+      img.alt = layer.name;
+      img.draggable = false;
+      img.style.cssText =
+        'width:' + layer.w + 'px;height:' + layer.h + 'px;display:block;border:0;outline:0;pointer-events:none;';
+      wrap.appendChild(img);
+    } else {
+      const canvas = document.createElement('canvas');
+      canvas.width = layer.w;
+      canvas.height = layer.h;
+      canvas.style.cssText =
+        'width:' + layer.w + 'px;height:' + layer.h + 'px;display:block;border:0;outline:0;background:transparent;pointer-events:none;';
+      wrap.appendChild(canvas);
 
-    wrap.appendChild(canvas);
+      const speedMul = (layer.options.speed || 100) / 100;
+      if (layer.videoItem) {
+        layer.videoItem.FPS = Math.max(1, Math.round((layer.baseFps || 20) * speedMul));
+        const player = new SVGA.Player(canvas);
+        player.loops = 0;
+        player.clearsAfterStop = false;
+        if (player.setClipsToBounds) player.setClipsToBounds(false);
+        player.setVideoItem(layer.videoItem);
+        if (layer.visible && !studioState.edit.paused) player.startAnimation();
+        layer.player = player;
+      }
+    }
+
     shell.appendChild(wrap);
     layer.wrapEl = wrap;
     studioEditEnableLayerDrag(layer, wrap);
-
-    // Apply speed to FPS before play
-    const speedMul = (layer.options.speed || 100) / 100;
-    layer.videoItem.FPS = Math.max(1, Math.round((layer.baseFps || 20) * speedMul));
-
-    const player = new SVGA.Player(canvas);
-    player.loops = 0;
-    player.clearsAfterStop = false;
-    if (player.setClipsToBounds) player.setClipsToBounds(false);
-    player.setVideoItem(layer.videoItem);
-    if (layer.visible) player.startAnimation();
-    layer.player = player;
-
     studioEditApplyLayerTransform(layer);
   });
 
   stageEl.appendChild(shell);
   studioEditRefreshLayerZIndex();
-  studioState.edit.paused = false;
 
   const totalSize = layers.reduce((s, l) => s + l.size, 0);
-  document.getElementById('svga-edit-file-name').textContent =
-    layers.length === 1 ? layers[0].name : layers.length + ' SVGA layers stacked';
-  document.getElementById('svga-edit-file-size').textContent = studioFormatSize(totalSize);
+  document.getElementById('svga-edit-file-name').textContent = layers.length + ' item layout';
+  document.getElementById('svga-edit-file-size').textContent =
+    layers.length + ' / 8 on preview · ' + studioFormatSize(totalSize);
 
   const active = layers.find((l) => l.id === studioState.edit.activeLayerId) || layers[layers.length - 1];
   if (active) {
     studioState.edit.activeLayerId = active.id;
-    studioRenderEditImages(active.videoItem);
     studioEditLoadOptionsToUI(active);
   }
 }
@@ -376,7 +631,6 @@ function studioEditEnableLayerDrag(layer, wrap) {
     studioState.edit.activeLayerId = layer.id;
     studioEditRefreshLayerZIndex();
     studioEditRenderLayerList();
-    studioRenderEditImages(layer.videoItem);
     studioEditLoadOptionsToUI(layer);
 
     dragging = true;
@@ -455,6 +709,8 @@ function studioEditLoadOptionsToUI(layer) {
   set('svga-edit-rotation', o.rotation);
   set('svga-edit-opacity', o.opacity);
   set('svga-edit-tint', o.tint);
+  set('svga-edit-frame-start', o.startFrame || 0);
+  set('svga-edit-frame-end', o.endFrame || layer.frames || 0);
   const tintOn = document.getElementById('svga-edit-tint-on');
   if (tintOn) tintOn.checked = !!o.tintOn;
 
@@ -466,6 +722,9 @@ function studioEditLoadOptionsToUI(layer) {
   sv('svga-edit-scale-val', o.scale + '%');
   sv('svga-edit-rotation-val', o.rotation + '°');
   sv('svga-edit-opacity-val', o.opacity + '%');
+
+  const speedInput = document.getElementById('svga-edit-speed');
+  if (speedInput) speedInput.disabled = layer.kind === 'image';
 }
 
 function studioEditReadOptionsFromUI() {
@@ -477,7 +736,9 @@ function studioEditReadOptionsFromUI() {
     rotation: parseInt(document.getElementById('svga-edit-rotation')?.value, 10) || 0,
     opacity: parseInt(document.getElementById('svga-edit-opacity')?.value, 10) || 100,
     tint: document.getElementById('svga-edit-tint')?.value || '#ffffff',
-    tintOn: !!document.getElementById('svga-edit-tint-on')?.checked
+    tintOn: !!document.getElementById('svga-edit-tint-on')?.checked,
+    startFrame: parseInt(document.getElementById('svga-edit-frame-start')?.value, 10) || 0,
+    endFrame: parseInt(document.getElementById('svga-edit-frame-end')?.value, 10) || 0
   };
 }
 
@@ -493,6 +754,12 @@ function studioEditOnOptionChange() {
   document.getElementById('svga-edit-opacity-val').textContent = o.opacity + '%';
 
   studioEditApplyLayerTransform(layer);
+
+  try {
+    localStorage.setItem('aspro_edit_autosave', JSON.stringify(
+      studioState.edit.layers.map((l) => ({ name: l.name, kind: l.kind, options: l.options }))
+    ));
+  } catch (_) {}
 
   // Speed change needs player FPS update
   const newFps = Math.max(1, Math.round((layer.baseFps || 20) * (o.speed / 100)));
@@ -518,7 +785,9 @@ function studioEditResetOptions() {
     rotation: 0,
     opacity: 100,
     tint: '#ffffff',
-    tintOn: false
+    tintOn: false,
+    startFrame: 0,
+    endFrame: layer.frames || 0
   };
   studioEditLoadOptionsToUI(layer);
   studioEditOnOptionChange();
@@ -527,10 +796,14 @@ function studioEditResetOptions() {
 function studioEditUpdateMeta() {
   const layers = studioState.edit.layers;
   if (!layers.length) {
-    ['size', 'frames', 'fps', 'duration', 'version'].forEach((k) => {
+    ['size', 'frames', 'fps', 'duration'].forEach((k) => {
       const el = document.getElementById('svga-edit-meta-' + k);
       if (el) el.textContent = '—';
     });
+    const ver = document.getElementById('svga-edit-meta-version');
+    if (ver) ver.textContent = '0 / 8';
+    const count = document.getElementById('svga-edit-layer-count');
+    if (count) count.textContent = '0';
     return;
   }
   let outW = 0;
@@ -547,8 +820,8 @@ function studioEditUpdateMeta() {
   document.getElementById('svga-edit-meta-size').textContent = outW + ' × ' + outH;
   document.getElementById('svga-edit-meta-frames').textContent = String(frames);
   document.getElementById('svga-edit-meta-fps').textContent = String(fps);
-  document.getElementById('svga-edit-meta-duration').textContent = duration.toFixed(1) + 's';
-  document.getElementById('svga-edit-meta-version').textContent = String(layers.length);
+  document.getElementById('svga-edit-meta-duration').textContent = duration.toFixed(1) + ' s';
+  document.getElementById('svga-edit-meta-version').textContent = layers.length + ' / 8';
   document.getElementById('svga-edit-layer-count').textContent = String(layers.length);
 }
 
@@ -587,7 +860,6 @@ function studioEditRenderLayerList() {
       studioEditRefreshLayerZIndex();
       studioState.edit.layers.forEach((l) => studioEditApplyLayerTransform(l));
       studioEditRenderLayerList();
-      studioRenderEditImages(layer.videoItem);
       studioEditLoadOptionsToUI(layer);
     });
 
@@ -635,115 +907,165 @@ function studioEditRemoveLayer(id) {
       layer.player.clear();
     }
   } catch (_) {}
-  if (layer.url) URL.revokeObjectURL(layer.url);
   if (studioState.edit.activeLayerId === id) {
     studioState.edit.activeLayerId = studioState.edit.layers.length
       ? studioState.edit.layers[studioState.edit.layers.length - 1].id
       : null;
-  }
-  if (!studioState.edit.layers.length) {
-    studioResetEdit();
-    return;
   }
   studioEditRebuildPreview();
   studioEditRenderLayerList();
   studioEditUpdateMeta();
 }
 
-function studioRenderEditImages(videoItem) {
-  const list = document.getElementById('svga-edit-image-list');
-  if (!list || !videoItem) return;
-  const images = videoItem.images || {};
-  const keys = Object.keys(images);
-  document.getElementById('svga-edit-image-count').textContent = String(keys.length);
-  list.innerHTML = '';
-  studioState.edit.selectedKey = null;
-  document.getElementById('svga-edit-replace-btn').disabled = true;
-
-  if (!keys.length) {
-    list.innerHTML = '<div class="svga-edit-empty">No images in this layer</div>';
-    return;
-  }
-
-  keys.forEach((key) => {
-    const img = images[key];
-    const row = document.createElement('button');
-    row.type = 'button';
-    row.className = 'svga-edit-image-row';
-    row.dataset.key = key;
-
-    const thumbWrap = document.createElement('div');
-    thumbWrap.className = 'svga-edit-thumb';
-    if (img && (img.src || img instanceof HTMLImageElement || img instanceof HTMLCanvasElement)) {
-      const clone = document.createElement('img');
-      clone.alt = key;
-      if (img.src) clone.src = img.src;
-      else if (img instanceof HTMLCanvasElement) clone.src = img.toDataURL('image/png');
-      thumbWrap.appendChild(clone);
-    }
-
-    const iw = img.naturalWidth || img.width || 0;
-    const ih = img.naturalHeight || img.height || 0;
-    const bytes = studioEstimateImageBytes(img);
-
-    const info = document.createElement('div');
-    info.className = 'svga-edit-image-info';
-    info.innerHTML =
-      '<div class="svga-edit-image-key">' + key + '</div>' +
-      '<div class="svga-edit-image-meta">' + iw + ' × ' + ih + ' · ' + studioFormatKb(bytes) + '</div>';
-
-    row.appendChild(thumbWrap);
-    row.appendChild(info);
-    row.addEventListener('click', () => studioEditSelectImage(key));
-    list.appendChild(row);
-  });
-}
-
-function studioEditSelectImage(key) {
-  studioState.edit.selectedKey = key;
-  document.querySelectorAll('.svga-edit-image-row').forEach((el) => {
-    el.classList.toggle('selected', el.dataset.key === key);
-  });
-  document.getElementById('svga-edit-replace-btn').disabled = false;
-}
-
 function studioEditPickReplace() {
-  if (!studioState.edit.selectedKey || !studioState.edit.activeLayerId) {
-    studioNotify('Select a layer image first', 'error');
-    return;
-  }
-  document.getElementById('svga-edit-replace-input').click();
+  const input = document.getElementById('svga-edit-replace-input');
+  if (input) input.click();
 }
 
-function studioEditReplaceSelected(e) {
-  const file = e.target.files && e.target.files[0];
-  e.target.value = '';
-  const layer = studioState.edit.layers.find((l) => l.id === studioState.edit.activeLayerId);
-  if (!file || !studioState.edit.selectedKey || !layer) return;
+async function studioEditInspectActive() {
+  const layer = studioEditGetActiveLayer();
+  if (!layer) {
+    studioNotify('Select a layer on preview first', 'error');
+    return;
+  }
+  const grid = document.getElementById('svga-edit-replace-grid');
+  if (layer.kind === 'image') {
+    studioState.edit.replaceKey = '__image__';
+    if (grid) {
+      grid.innerHTML = '<button type="button" class="svga-replace-tile selected" onclick="studioEditPickReplace()"><img src="' +
+        layer.url + '"><span>Replace this image</span></button>';
+    }
+    studioEditPickReplace();
+    return;
+  }
+  try {
+    const fd = new FormData();
+    fd.append('file', layer.file);
+    const res = await fetch('/api/convert/svga-inspect', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Inspect failed');
+    layer.inspect = data;
+    studioState.edit.inspect = data;
+    if (!layer.options.endFrame) layer.options.endFrame = data.frames || 0;
+    studioEditLoadOptionsToUI(layer);
+    if (!grid) return;
+    if (!data.images || !data.images.length) {
+      grid.innerHTML = '<div class="svga-edit-empty">No replaceable sprites</div>';
+      return;
+    }
+    grid.innerHTML = data.images.map((img) => (
+      '<button type="button" class="svga-replace-tile" data-key="' + img.key + '">' +
+      '<img src="' + img.preview + '" alt="">' +
+      '<span>' + img.key + '</span></button>'
+    )).join('');
+    grid.querySelectorAll('.svga-replace-tile').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        grid.querySelectorAll('.svga-replace-tile').forEach((b) => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        studioState.edit.replaceKey = btn.getAttribute('data-key');
+        studioEditPickReplace();
+      });
+    });
+    studioNotify('Click a sprite, then pick an image', 'info');
+  } catch (err) {
+    studioNotify(err.message || 'Inspect failed', 'error');
+  }
+}
 
-  const key = studioState.edit.selectedKey;
-  const reader = new FileReader();
-  reader.onload = () => {
+function studioEditReplaceSelected(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  const layer = studioEditGetActiveLayer();
+  if (!file || !layer) return;
+  if (layer.kind === 'image' || studioState.edit.replaceKey === '__image__') {
+    try { URL.revokeObjectURL(layer.url); } catch (_) {}
+    layer.file = file;
+    layer.name = file.name;
+    layer.url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      layer.videoItem.images[key] = img;
-      try {
-        if (layer.player && typeof layer.player.setImage === 'function') {
-          layer.player.setImage(img, key);
-        } else if (layer.player) {
-          layer.player.setVideoItem(layer.videoItem);
-          layer.player.startAnimation();
-        }
-      } catch (err) {
-        console.error(err);
-      }
-      studioRenderEditImages(layer.videoItem);
-      studioEditSelectImage(key);
-      studioNotify('Replaced image: ' + key, 'success');
+      layer.w = img.naturalWidth;
+      layer.h = img.naturalHeight;
+      studioEditRebuildPreview();
+      studioEditRenderLayerList();
     };
-    img.src = reader.result;
+    img.src = layer.url;
+    studioNotify('Image replaced', 'success');
+    return;
+  }
+  const key = studioState.edit.replaceKey;
+  if (!key) {
+    studioNotify('Select a sprite tile first', 'error');
+    return;
+  }
+  if (!layer.replacements) layer.replacements = {};
+  layer.replacements[key] = file;
+  studioNotify('Replacement set for ' + key, 'success');
+}
+
+function studioEditApplyText() {
+  const layer = studioEditGetActiveLayer();
+  const text = document.getElementById('svga-edit-text')?.value || '';
+  if (!layer || layer.kind !== 'svga') {
+    studioNotify('Select an SVGA layer', 'error');
+    return;
+  }
+  if (!text.trim()) {
+    studioNotify('Enter text first', 'error');
+    return;
+  }
+  const key = studioState.edit.replaceKey;
+  if (!key || key === '__image__') {
+    studioNotify('Load sprites and select one to bake text onto', 'error');
+    return;
+  }
+  layer.textOverlay = {
+    imageKey: key,
+    text: text.trim(),
+    color: document.getElementById('svga-edit-text-color')?.value || '#ffffff',
+    fontSize: parseInt(document.getElementById('svga-edit-text-size')?.value, 10) || 32
   };
-  reader.readAsDataURL(file);
+  studioNotify('Text will bake onto ' + key + ' at export', 'success');
+}
+
+async function studioEditExportPatch() {
+  const layer = studioEditGetActiveLayer() || studioState.edit.layers.find((l) => l.kind === 'svga' && l.visible);
+  if (!layer || layer.kind !== 'svga') {
+    studioNotify('Select an SVGA layer to export an edited file', 'error');
+    return;
+  }
+  const btn = document.getElementById('svga-edit-patch-btn');
+  studioSetBusy(btn, true);
+  try {
+    const fd = new FormData();
+    fd.append('file', layer.file);
+    const keys = [];
+    Object.keys(layer.replacements || {}).forEach((key) => {
+      keys.push(key);
+      fd.append('replacements', layer.replacements[key], layer.replacements[key].name);
+    });
+    fd.append('replaceKeys', JSON.stringify(keys));
+    fd.append('textOverlays', JSON.stringify(layer.textOverlay ? [layer.textOverlay] : []));
+    fd.append('hideKeys', JSON.stringify([]));
+    const o = layer.options || {};
+    const newFps = Math.max(1, Math.round((layer.baseFps || 20) * ((o.speed || 100) / 100)));
+    fd.append('fps', String(newFps));
+    fd.append('startFrame', String(o.startFrame || 0));
+    if (o.endFrame) fd.append('endFrame', String(o.endFrame));
+    const res = await fetch('/api/convert/svga-patch', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Edit export failed');
+    await studioDownloadResult(data);
+    studioNotify('Edited SVGA exported', 'success');
+  } catch (err) {
+    studioNotify(err.message || 'Edit export failed', 'error');
+  } finally {
+    studioSetBusy(btn, false);
+  }
+}
+
+function studioRenderEditImages() {
+  return;
 }
 
 function studioEditPlayPause() {
@@ -772,7 +1094,7 @@ function studioEditRestart() {
 async function studioEditExportCompose() {
   const layers = studioState.edit.layers.filter((l) => l.visible);
   if (!layers.length) {
-    studioNotify('Add at least one visible SVGA layer', 'error');
+    studioNotify('Place at least one item on Large Preview', 'error');
     return;
   }
 
@@ -789,6 +1111,7 @@ async function studioEditExportCompose() {
     layers.forEach((layer) => {
       formData.append('files', layer.file, layer.name);
       transforms.push({
+        kind: layer.kind || 'svga',
         scale: (layer.options.scale || 100) / 100,
         x: layer.options.x || 0,
         y: layer.options.y || 0,
@@ -808,13 +1131,19 @@ async function studioEditExportCompose() {
     const data = await res.json();
     if (!res.ok || !data.success) throw new Error(data.error || 'Compose failed');
 
+    const dl = await fetch(data.downloadUrl);
+    if (!dl.ok) throw new Error('Download failed');
+    const blob = await dl.blob();
+    const href = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = data.downloadUrl;
+    a.href = href;
     a.download = data.filename || 'composed.svga';
     document.body.appendChild(a);
     a.click();
     a.remove();
+    URL.revokeObjectURL(href);
 
+    studioRememberDownload(data);
     studioNotify('Composed SVGA ready (' + layers.length + ' layers)', 'success');
   } catch (err) {
     console.error(err);
@@ -827,6 +1156,7 @@ async function studioEditExportCompose() {
 }
 
 function studioResetEdit() {
+  studioEditStopLibraryPlayers();
   studioState.edit.layers.forEach((layer) => {
     try {
       if (layer.player) {
@@ -834,29 +1164,25 @@ function studioResetEdit() {
         layer.player.clear();
       }
     } catch (_) {}
-    if (layer.url) URL.revokeObjectURL(layer.url);
   });
+  const urls = new Set();
+  studioState.edit.library.forEach((a) => { if (a.url) urls.add(a.url); });
+  urls.forEach((url) => URL.revokeObjectURL(url));
+
   studioState.edit = {
+    library: [],
     layers: [],
     activeLayerId: null,
-    selectedKey: null,
     paused: false,
-    composing: false
+    composing: false,
+    canvasMax: 8
   };
   studioState.files['svga-edit'] = null;
 
-  document.getElementById('svga-edit-workspace').style.display = 'none';
-  document.getElementById('svga-edit-upload-zone').style.display = '';
-  document.getElementById('svga-edit-reset-btn').style.display = 'none';
-  document.getElementById('svga-edit-player').innerHTML = '';
-  document.getElementById('svga-edit-image-list').innerHTML = '';
-  document.getElementById('svga-edit-layer-list').innerHTML = '';
-  document.getElementById('svga-edit-image-count').textContent = '0';
-  document.getElementById('svga-edit-layer-count').textContent = '0';
-  ['size', 'frames', 'fps', 'duration', 'version'].forEach((k) => {
-    const el = document.getElementById('svga-edit-meta-' + k);
-    if (el) el.textContent = '—';
-  });
+  studioEditRebuildPreview();
+  studioEditRenderLibrary();
+  studioEditRenderLayerList();
+  studioEditUpdateMeta();
 }
 
 async function studioPlaySvga(file, containerId) {
@@ -946,18 +1272,362 @@ function studioSelectFormat(input) {
   input.closest('.format-option')?.classList.add('selected');
 }
 
-function studioAction(module) {
-  const labels = {
-    'svga-edit': 'SVGA Editing export',
-    'vap-mp4': 'VAP MP4 export',
-    'vap-convert': 'VAP → SVGA/WebP conversion',
-    'svga-vap': 'SVGA → VAP MP4 encoding'
+async function studioBatchVapConvert(files) {
+  const list = files.filter((f) => studioFileOk(f, 'vap-convert'));
+  if (!list.length) {
+    studioNotify('No valid VAP/MP4 files', 'error');
+    return;
+  }
+  studioLoadFile('vap-convert', list[0]);
+  const format = document.querySelector('input[name="vap-convert-format"]:checked')?.value || 'svga';
+  studioSetProgress('vap-convert-progress', 5, 'Batch 0/' + list.length);
+  let ok = 0;
+  let fail = 0;
+  for (let i = 0; i < list.length; i++) {
+    studioSetProgress('vap-convert-progress', Math.round(((i) / list.length) * 100), 'Batch ' + (i + 1) + '/' + list.length);
+    try {
+      const fd = new FormData();
+      fd.append('file', list[i]);
+      fd.append('format', format);
+      fd.append('quality', document.getElementById('vap-convert-quality')?.value || 'medium');
+      fd.append('fps', document.getElementById('vap-convert-fps')?.value || '30');
+      fd.append('resolution', document.getElementById('vap-convert-res')?.value || 'original');
+      fd.append('keepAlpha', document.getElementById('vap-convert-alpha')?.checked ? '1' : '0');
+      const res = await fetch('/api/convert/vap', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'failed');
+      await studioDownloadResult(data);
+      ok++;
+    } catch (err) {
+      fail++;
+      studioNotify(list[i].name + ': ' + (err.message || 'failed'), 'error');
+    }
+  }
+  studioSetProgress('vap-convert-progress', 100, ok + ' ok, ' + fail + ' failed');
+  studioNotify('Batch done: ' + ok + ' ok, ' + fail + ' failed', fail ? 'error' : 'success');
+}
+
+function studioDetectVapLayout(width, height) {
+  const w = Number(width) || 0;
+  const h = Number(height) || 0;
+  if (w >= 4 && w % 2 === 0 && h > 0 && w / h >= 1.85) return 'lr-alpha-rgb';
+  if (h >= 4 && h % 2 === 0 && w > 0 && h / w >= 1.85) return 'tb-alpha-rgb';
+  return 'none';
+}
+
+function studioStopVapPreview() {
+  if (studioState.vapRaf) {
+    cancelAnimationFrame(studioState.vapRaf);
+    studioState.vapRaf = 0;
+  }
+}
+
+function studioBindVapPreview(video, canvasId, module) {
+  const canvas = document.getElementById(canvasId);
+  if (!video || !canvas) return;
+  studioStopVapPreview();
+  video.muted = true;
+  video.loop = true;
+  video.playsInline = true;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const draw = () => {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (vw && vh) {
+      const layout = studioDetectVapLayout(vw, vh);
+      let visW = vw;
+      let visH = vh;
+      let colorSx = 0;
+      let colorSy = 0;
+      let alphaSx = 0;
+      let alphaSy = 0;
+      if (layout === 'lr-alpha-rgb') {
+        visW = Math.floor(vw / 2);
+        visH = vh;
+        alphaSx = 0;
+        colorSx = visW;
+      } else if (layout === 'tb-alpha-rgb') {
+        visW = vw;
+        visH = Math.floor(vh / 2);
+        alphaSy = 0;
+        colorSy = visH;
+      }
+      if (canvas.width !== visW) canvas.width = visW;
+      if (canvas.height !== visH) canvas.height = visH;
+      if (layout === 'none') {
+        ctx.drawImage(video, 0, 0, visW, visH);
+      } else {
+        ctx.clearRect(0, 0, visW, visH);
+        ctx.drawImage(video, colorSx, colorSy, visW, visH, 0, 0, visW, visH);
+        const color = ctx.getImageData(0, 0, visW, visH);
+        ctx.drawImage(video, alphaSx, alphaSy, visW, visH, 0, 0, visW, visH);
+        const alpha = ctx.getImageData(0, 0, visW, visH);
+        const cd = color.data;
+        const ad = alpha.data;
+        for (let i = 0; i < cd.length; i += 4) {
+          cd[i + 3] = ad[i];
+        }
+        ctx.putImageData(color, 0, 0);
+      }
+    }
+    studioState.vapRaf = requestAnimationFrame(draw);
   };
-  if (!studioState.files[module]) {
+  const start = () => {
+    studioStopVapPreview();
+    video.play().catch(() => {});
+    draw();
+  };
+  video.onloadedmetadata = start;
+  if (video.readyState >= 1) start();
+}
+
+function studioSetMetaText(prefix, info) {
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  if (!info) {
+    set(prefix + '-meta-res', '—');
+    set(prefix + '-meta-fps', '—');
+    set(prefix + '-meta-dur', '—');
+    set(prefix + '-meta-alpha', '—');
+    return;
+  }
+  set(prefix + '-meta-res', (info.width || 0) + ' × ' + (info.height || 0));
+  set(prefix + '-meta-fps', String(Math.round(info.fps || 0)));
+  set(prefix + '-meta-dur', Number(info.duration || 0).toFixed(2) + ' s');
+  set(prefix + '-meta-alpha', info.hasSplitAlpha ? 'Split alpha (VAP)' : 'No packed alpha');
+}
+
+async function studioProbeVap(file, module) {
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch('/api/convert/vap-info', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Probe failed');
+    studioState.vapMeta = data;
+    studioSetMetaText(module, data);
+  } catch (err) {
+    studioNotify(err.message || 'Could not read video info', 'error');
+  }
+}
+
+function studioSetBusy(btn, on) {
+  if (!btn) return;
+  btn.classList.toggle('loading', !!on);
+  btn.disabled = !!on;
+}
+
+function studioSetProgress(id, pct, label) {
+  const wrap = document.getElementById(id);
+  const bar = wrap ? wrap.querySelector('.studio-progress-bar') : null;
+  const text = wrap ? wrap.querySelector('.studio-progress-label') : null;
+  if (wrap) wrap.style.display = pct == null ? 'none' : 'block';
+  if (bar) bar.style.width = Math.max(0, Math.min(100, pct || 0)) + '%';
+  if (text) text.textContent = label || (Math.round(pct || 0) + '%');
+}
+
+function studioRememberDownload(data) {
+  studioState.downloads.unshift({
+    jobId: data.jobId,
+    filename: data.filename,
+    size: data.size,
+    url: data.downloadUrl,
+    at: Date.now()
+  });
+  studioState.downloads = studioState.downloads.slice(0, 12);
+  studioRenderDownloads();
+}
+
+function studioRenderDownloads() {
+  const el = document.getElementById('studio-download-list');
+  if (!el) return;
+  if (!studioState.downloads.length) {
+    el.innerHTML = '<div class="svga-edit-empty">No exports yet</div>';
+    return;
+  }
+  el.innerHTML = studioState.downloads.map((d) => (
+    '<a class="studio-dl-item" href="' + d.url + '" download="' + d.filename + '">' +
+    '<strong>' + d.filename + '</strong><span>' + studioFormatSize(d.size || 0) + '</span></a>'
+  )).join('');
+}
+
+async function studioDownloadResult(data) {
+  if (!data || !data.downloadUrl) throw new Error('No output file');
+  studioRememberDownload(data);
+  const res = await fetch(data.downloadUrl);
+  if (!res.ok) throw new Error('Download failed');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = data.filename || 'download';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  return blob;
+}
+
+function studioShowResultPreview(containerId, blob, filename) {
+  const box = document.getElementById(containerId);
+  if (!box || !blob) return;
+  box.style.display = 'block';
+  const url = URL.createObjectURL(blob);
+  const name = (filename || '').toLowerCase();
+  if (name.endsWith('.webp') || name.endsWith('.gif') || name.endsWith('.png')) {
+    box.innerHTML = '<p class="setting-label">Preview</p><img alt="preview" src="' + url + '">';
+  } else if (name.endsWith('.mp4')) {
+    box.innerHTML = '<p class="setting-label">Preview</p><video controls playsinline muted src="' + url + '"></video>';
+  } else {
+    box.innerHTML = '<p class="setting-label">File ready: ' + filename + '</p>';
+  }
+}
+
+async function studioConvertVapMp4() {
+  const file = studioState.files['vap-mp4'];
+  if (!file) {
     studioNotify('Upload a file first', 'error');
     return;
   }
-  studioNotify(labels[module] + ' — pipeline coming next (UI ready)', 'info');
+  const btn = document.getElementById('vap-mp4-export-btn');
+  studioSetBusy(btn, true);
+  studioSetProgress('vap-mp4-progress', 20, 'Encoding VAP…');
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('format', 'vap');
+    fd.append('quality', 'high');
+    fd.append('keepAlpha', '1');
+    const res = await fetch('/api/convert/vap', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Export failed');
+    studioSetProgress('vap-mp4-progress', 100, 'Done');
+    const blob = await studioDownloadResult(data);
+    studioShowResultPreview('vap-mp4-result', blob, data.filename);
+    studioNotify('VAP MP4 exported', 'success');
+  } catch (err) {
+    studioNotify(err.message || 'VAP export failed', 'error');
+  } finally {
+    studioSetBusy(btn, false);
+    setTimeout(() => studioSetProgress('vap-mp4-progress', null), 2500);
+  }
+}
+
+function studioMp4VapToggleBg() {
+  const on = document.getElementById('mp4-vap-remove-bg')?.checked;
+  const box = document.getElementById('mp4-vap-bg-colors');
+  if (box) box.style.display = on ? '' : 'none';
+}
+
+async function studioConvertMp4Vap() {
+  const file = studioState.files['mp4-vap'];
+  if (!file) {
+    studioNotify('Upload an MP4 first', 'error');
+    return;
+  }
+  const btn = document.getElementById('mp4-vap-btn');
+  studioSetBusy(btn, true);
+  studioSetProgress('mp4-vap-progress', 15, 'Converting MP4 → VAP…');
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('format', 'vap');
+    fd.append('layout', 'none');
+    fd.append('keepAlpha', '1');
+    fd.append('quality', document.getElementById('mp4-vap-quality')?.value || 'medium');
+    fd.append('fps', document.getElementById('mp4-vap-fps')?.value || '30');
+    fd.append('bitrate', document.getElementById('mp4-vap-bitrate')?.value || '4');
+    fd.append('resolution', document.getElementById('mp4-vap-res')?.value || 'original');
+    const removeBg = document.getElementById('mp4-vap-remove-bg')?.checked;
+    fd.append('removeBg', removeBg ? '1' : '0');
+    fd.append('bgColor', document.getElementById('mp4-vap-bg-color')?.value || 'transparent');
+    const res = await fetch('/api/convert/vap', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'MP4 → VAP failed');
+    studioSetProgress('mp4-vap-progress', 100, 'Done');
+    const blob = await studioDownloadResult(data);
+    studioShowResultPreview('mp4-vap-result', blob, data.filename);
+    studioNotify('VAP MP4 ready', 'success');
+  } catch (err) {
+    studioNotify(err.message || 'MP4 → VAP failed', 'error');
+  } finally {
+    studioSetBusy(btn, false);
+    setTimeout(() => studioSetProgress('mp4-vap-progress', null), 2500);
+  }
+}
+
+async function studioConvertVapFormat() {
+  const file = studioState.files['vap-convert'];
+  if (!file) {
+    studioNotify('Upload a file first', 'error');
+    return;
+  }
+  const format = document.querySelector('input[name="vap-convert-format"]:checked')?.value || 'svga';
+  const btn = document.getElementById('vap-convert-btn');
+  studioSetBusy(btn, true);
+  studioSetProgress('vap-convert-progress', 15, 'Extracting frames…');
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('format', format);
+    fd.append('quality', document.getElementById('vap-convert-quality')?.value || 'medium');
+    fd.append('fps', document.getElementById('vap-convert-fps')?.value || '30');
+    fd.append('resolution', document.getElementById('vap-convert-res')?.value || 'original');
+    fd.append('keepAlpha', document.getElementById('vap-convert-alpha')?.checked ? '1' : '0');
+    const res = await fetch('/api/convert/vap', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Conversion failed');
+    studioSetProgress('vap-convert-progress', 100, 'Done');
+    const blob = await studioDownloadResult(data);
+    studioShowResultPreview('vap-convert-result', blob, data.filename);
+    studioNotify('Converted to ' + format.toUpperCase(), 'success');
+  } catch (err) {
+    studioNotify(err.message || 'Conversion failed', 'error');
+  } finally {
+    studioSetBusy(btn, false);
+    setTimeout(() => studioSetProgress('vap-convert-progress', null), 2500);
+  }
+}
+
+async function studioConvertSvgaVap() {
+  const file = studioState.files['svga-vap'];
+  if (!file) {
+    studioNotify('Upload a file first', 'error');
+    return;
+  }
+  const btn = document.getElementById('svga-vap-btn');
+  studioSetBusy(btn, true);
+  studioSetProgress('svga-vap-progress', 20, 'Rendering SVGA…');
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('fps', document.getElementById('svga-vap-fps')?.value || '30');
+    fd.append('bitrate', document.getElementById('svga-vap-bitrate')?.value || '4');
+    fd.append('resolution', document.getElementById('svga-vap-res')?.value || 'original');
+    fd.append('keepAlpha', document.getElementById('svga-vap-alpha')?.checked ? '1' : '0');
+    const res = await fetch('/api/convert/svga-vap', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Encode failed');
+    studioSetProgress('svga-vap-progress', 100, 'Done');
+    const blob = await studioDownloadResult(data);
+    studioShowResultPreview('svga-vap-result', blob, data.filename);
+    studioNotify('VAP MP4 encoded', 'success');
+  } catch (err) {
+    studioNotify(err.message || 'SVGA → VAP failed', 'error');
+  } finally {
+    studioSetBusy(btn, false);
+    setTimeout(() => studioSetProgress('svga-vap-progress', null), 2500);
+  }
+}
+
+function studioAction(module) {
+  if (module === 'vap-mp4') return studioConvertVapMp4();
+  if (module === 'mp4-vap') return studioConvertMp4Vap();
+  if (module === 'vap-convert') return studioConvertVapFormat();
+  if (module === 'svga-vap') return studioConvertSvgaVap();
+  studioNotify('Unknown action', 'error');
 }
 
 /* ===== Multi SVGA Preview ===== */
@@ -1086,6 +1756,27 @@ function studioAddMultiCard(file) {
       meta.querySelector('.multi-info').textContent =
         studioFormatSize(file.size) + ' · ' + w + '×' + h + ' · ' + fps + 'fps · ' + frames + 'f';
 
+      const controls = document.createElement('div');
+      controls.className = 'multi-card-controls';
+      controls.innerHTML =
+        '<button type="button" class="studio-chip-btn" data-act="play">Play</button>' +
+        '<button type="button" class="studio-chip-btn" data-act="pause">Pause</button>' +
+        '<button type="button" class="studio-chip-btn" data-act="stop">Stop</button>';
+      controls.querySelectorAll('[data-act]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const act = btn.getAttribute('data-act');
+          try {
+            if (act === 'play') player.startAnimation();
+            else if (act === 'pause') player.pauseAnimation();
+            else {
+              player.stopAnimation();
+              player.stepToFrame && player.stepToFrame(0, false);
+            }
+          } catch (_) {}
+        });
+      });
+      card.appendChild(controls);
+
       URL.revokeObjectURL(url);
       resolve();
     }, (err) => {
@@ -1094,6 +1785,27 @@ function studioAddMultiCard(file) {
       URL.revokeObjectURL(url);
       resolve();
     });
+  });
+}
+
+function studioMultiSetView(mode) {
+  studioState.multiView = mode === 'list' ? 'list' : 'grid';
+  const grid = document.getElementById('multi-svga-grid');
+  if (grid) grid.classList.toggle('list-view', studioState.multiView === 'list');
+}
+
+function studioMultiAll(act) {
+  studioState.multiPlayers.forEach((entry) => {
+    const p = entry.player;
+    if (!p) return;
+    try {
+      if (act === 'play') p.startAnimation();
+      else if (act === 'pause') p.pauseAnimation();
+      else {
+        p.stopAnimation();
+        if (p.stepToFrame) p.stepToFrame(0, false);
+      }
+    } catch (_) {}
   });
 }
 
@@ -1153,3 +1865,8 @@ function studioClearMulti() {
   document.getElementById('multi-svga-count').textContent = '0 files';
   document.getElementById('multi-svga-zoom-label').textContent = '100%';
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof studioEditRenderLibrary === 'function') studioEditRenderLibrary();
+  studioRenderDownloads();
+});

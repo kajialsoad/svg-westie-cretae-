@@ -91,7 +91,15 @@ function initEditor() {
   });
 
   // Object modified handler
-  editorState.canvas.on('object:modified', () => {
+  editorState.canvas.on('object:modified', (e) => {
+    const obj = e.target;
+    if (obj) {
+      obj._baseLeft = obj.left;
+      obj._baseTop = obj.top;
+      obj._baseScaleX = obj.scaleX;
+      obj._baseScaleY = obj.scaleY;
+      obj._baseAngle = obj.angle || 0;
+    }
     renderLayersList();
   });
 
@@ -143,6 +151,11 @@ function addImageToCanvas(imageUrl, filename) {
       id: `layer_${Date.now()}`,
       name: filename || `Layer ${editorState.layers.length + 1}`,
     });
+    img._baseLeft = img.left;
+    img._baseTop = img.top;
+    img._baseScaleX = img.scaleX;
+    img._baseScaleY = img.scaleY;
+    img._baseAngle = img.angle || 0;
 
     editorState.canvas.add(img);
     editorState.layers.push(img);
@@ -296,11 +309,14 @@ function editorReset() {
   
   // Reset all objects to original state
   editorState.layers.forEach(layer => {
+    captureLayerBase(layer);
     layer.set({
       opacity: 1,
-      scaleX: layer.scaleX,
-      scaleY: layer.scaleY,
-      angle: 0,
+      left: layer._baseLeft,
+      top: layer._baseTop,
+      scaleX: layer._baseScaleX,
+      scaleY: layer._baseScaleY,
+      angle: layer._baseAngle || 0,
     });
   });
   
@@ -314,24 +330,40 @@ function editorReset() {
   showToast('Reset to start', 'info');
 }
 
+function captureLayerBase(layer) {
+  if (layer._baseLeft == null) {
+    layer._baseLeft = layer.left;
+    layer._baseTop = layer.top;
+    layer._baseScaleX = layer.scaleX;
+    layer._baseScaleY = layer.scaleY;
+    layer._baseAngle = layer.angle || 0;
+  }
+}
+
 function renderFrame(frameIndex) {
-  const t = frameIndex / editorState.totalFrames;
+  const t = editorState.totalFrames ? frameIndex / editorState.totalFrames : 0;
 
   editorState.layers.forEach(layer => {
+    captureLayerBase(layer);
     const layerId = layer.id;
     const effects = editorState.effects[layerId] || [];
+    const baseLeft = layer._baseLeft;
+    const baseTop = layer._baseTop;
+    const baseScaleX = layer._baseScaleX;
+    const baseScaleY = layer._baseScaleY;
+    const baseAngle = layer._baseAngle || 0;
 
-    // Reset layer
     layer.set({
       opacity: 1,
-      angle: 0,
-      left: layer.left,
-      top: layer.top,
+      angle: baseAngle,
+      left: baseLeft,
+      top: baseTop,
+      scaleX: baseScaleX,
+      scaleY: baseScaleY,
     });
 
-    // Apply effects
     effects.forEach(effect => {
-      const effectT = Math.min(1, t / (effect.duration / editorState.duration));
+      const effectT = Math.min(1, Math.max(0, t / (effect.duration / editorState.duration)));
 
       switch (effect.type) {
         case 'fadeIn':
@@ -341,31 +373,44 @@ function renderFrame(frameIndex) {
           layer.set({ opacity: 1 - effectT });
           break;
         case 'bounce':
-          const bounceY = Math.abs(Math.sin(effectT * Math.PI * 4)) * 50;
-          layer.set({ top: layer.top - bounceY });
+          layer.set({ top: baseTop - Math.abs(Math.sin(effectT * Math.PI * 4)) * 50 });
           break;
         case 'rotate360':
-          layer.set({ angle: effectT * 360 });
+          layer.set({ angle: baseAngle + effectT * 360 });
           break;
         case 'scaleUp':
-          const scaleUp = 1 + effectT;
-          layer.set({ scaleX: layer.scaleX * scaleUp, scaleY: layer.scaleY * scaleUp });
+          layer.set({ scaleX: baseScaleX * (1 + effectT), scaleY: baseScaleY * (1 + effectT) });
           break;
         case 'scaleDown':
-          const scaleDown = 1 - effectT * 0.5;
-          layer.set({ scaleX: layer.scaleX * scaleDown, scaleY: layer.scaleY * scaleDown });
+          layer.set({ scaleX: baseScaleX * (1 - effectT * 0.5), scaleY: baseScaleY * (1 - effectT * 0.5) });
           break;
         case 'slideLeft':
-          layer.set({ left: layer.left - effectT * editorState.canvas.width });
+          layer.set({ left: baseLeft - effectT * editorState.canvas.width });
           break;
         case 'slideRight':
-          layer.set({ left: layer.left + effectT * editorState.canvas.width });
+          layer.set({ left: baseLeft + effectT * editorState.canvas.width });
+          break;
+        default:
           break;
       }
     });
   });
 
   editorState.canvas.renderAll();
+}
+
+function editorScrub(event) {
+  const bar = document.getElementById('timeline-bar');
+  if (!bar || !editorState.layers.length) return;
+  const rect = bar.getBoundingClientRect();
+  const t = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+  editorState.totalFrames = Math.max(1, Math.floor(editorState.fps * editorState.duration));
+  editorState.currentFrame = Math.floor(t * editorState.totalFrames);
+  renderFrame(editorState.currentFrame);
+  const cursor = document.getElementById('timeline-cursor');
+  const timeDisplay = document.getElementById('timeline-time');
+  if (cursor) cursor.style.left = `${t * 100}%`;
+  if (timeDisplay) timeDisplay.textContent = `${(editorState.currentFrame / editorState.fps).toFixed(2)}s`;
 }
 
 // ===== RESET ANIMATIONS =====
