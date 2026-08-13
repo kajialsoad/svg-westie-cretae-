@@ -1482,13 +1482,14 @@ router.post('/convert/vap', upload.single('file'), async (req, res) => {
     if (format === 'vap' && removeBg && layout === 'none') {
       jobs.set(jobId, { ...jobs.get(jobId), step: 'Removing background...', progress: 48 });
       const processedDir = path.join(tempDir, 'processed');
-      const allowedBg = new Set(['green', 'black', 'white', 'transparent', 'nobackground']);
-      let bgColor = String(req.body.bgColor || 'transparent').toLowerCase();
-      if (!allowedBg.has(bgColor)) bgColor = 'transparent';
-      await ffmpegService.removeBackgroundBatch(extracted.files, processedDir, {
-        outputBg: bgColor,
-        keyColor: 'auto',
-      });
+      let keyColor = String(req.body.bgColor || 'transparent').toLowerCase();
+      if (keyColor === 'transparent' || keyColor === 'nobackground' || keyColor === 'auto') {
+        keyColor = await vapService.detectKeyColor(extracted.files[0]);
+      }
+      if (!['white', 'black', 'green'].includes(keyColor)) {
+        keyColor = 'white';
+      }
+      await vapService.punchKeyOnFrames(extracted.files, processedDir, keyColor);
       encodeDir = processedDir;
       encodePrefix = 'processed_';
     }

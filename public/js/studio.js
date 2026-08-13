@@ -1322,7 +1322,7 @@ function studioStopVapPreview() {
   }
 }
 
-function studioBindVapPreview(video, canvasId, module) {
+function studioBindVapPreview(video, canvasId, module, forceLayout) {
   const canvas = document.getElementById(canvasId);
   if (!video || !canvas) return;
   studioStopVapPreview();
@@ -1334,7 +1334,7 @@ function studioBindVapPreview(video, canvasId, module) {
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     if (vw && vh) {
-      const layout = studioDetectVapLayout(vw, vh);
+      const layout = forceLayout || studioDetectVapLayout(vw, vh);
       let visW = vw;
       let visH = vh;
       let colorSx = 0;
@@ -1479,7 +1479,16 @@ function studioShowResultPreview(containerId, blob, filename) {
   if (name.endsWith('.webp') || name.endsWith('.gif') || name.endsWith('.png')) {
     box.innerHTML = '<p class="setting-label">Preview</p><img alt="preview" src="' + url + '">';
   } else if (name.endsWith('.mp4')) {
-    box.innerHTML = '<p class="setting-label">Preview</p><video controls playsinline muted src="' + url + '"></video>';
+    const vidId = containerId + '-video';
+    const canvasId = containerId + '-canvas';
+    box.innerHTML =
+      '<p class="setting-label">Alpha preview</p>' +
+      '<div class="vap-preview-stage" id="' + containerId + '-stage">' +
+      '<video id="' + vidId + '" class="vap-hidden-source" playsinline loop muted></video>' +
+      '<canvas id="' + canvasId + '" class="vap-alpha-canvas"></canvas></div>';
+    const video = document.getElementById(vidId);
+    video.src = url;
+    studioBindVapPreview(video, canvasId, containerId, 'lr-alpha-rgb');
   } else {
     box.innerHTML = '<p class="setting-label">File ready: ' + filename + '</p>';
   }
